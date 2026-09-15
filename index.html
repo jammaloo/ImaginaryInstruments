@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Imaginary Instruments — play the air</title>
+  <meta name="description" content="Play an invisible trombone and accordion with your webcam. Face and hand tracking, Web Audio synthesis — everything runs locally in your browser.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎺</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="stage">
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="overlay"></canvas>
+
+    <header id="topbar" class="hidden">
+      <div class="brand">Imaginary<span>Instruments</span></div>
+
+      <nav class="switch" aria-label="Choose instrument">
+        <button id="btnTrombone" class="switch-btn active" data-instrument="trombone">
+          <span class="ico">🎺</span> Trombone <kbd>1</kbd>
+        </button>
+        <button id="btnAccordion" class="switch-btn" data-instrument="accordion">
+          <span class="ico">🪗</span> Accordion <kbd>2</kbd>
+        </button>
+      </nav>
+
+      <div class="top-right">
+        <div id="status" class="pill">Starting…</div>
+        <button id="muteBtn" class="icon-btn" title="Mute / unmute" aria-label="Mute or unmute">🔊</button>
+      </div>
+    </header>
+
+    <div id="hint" class="hidden"></div>
+    <div id="fps" class="hidden"></div>
+
+    <section id="startPanel" class="panel">
+      <h1>Play invisible instruments<br>with your own body</h1>
+      <p class="tagline">
+        Your webcam tracks your face and hands. No video ever leaves your device —
+        everything runs locally in your browser.
+      </p>
+
+      <div class="cards">
+        <article class="card" data-instrument="trombone">
+          <div class="card-art">🎺</div>
+          <h2>Air Trombone</h2>
+          <p>The trombone hangs off your mouth. Reach out a hand to grab the slide —
+             pull it in and out to change pitch, and <strong>open your mouth</strong> to blow.</p>
+        </article>
+        <article class="card" data-instrument="accordion">
+          <div class="card-art">🪗</div>
+          <h2>Air Accordion</h2>
+          <p>The accordion stretches between both hands. <strong>Pull your hands apart
+             and squeeze them together</strong> to pump the bellows and play.</p>
+        </article>
+      </div>
+
+      <button id="startBtn" class="primary">🎤 &nbsp;Start camera &amp; play</button>
+      <button id="mouseBtn" class="ghost">No camera? Try mouse mode</button>
+      <p class="fineprint">First load downloads the tracking models (~15&nbsp;MB), then everything is instant.</p>
+    </section>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
