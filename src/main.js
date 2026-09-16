@@ -66,6 +66,9 @@ const app = {
   mode: "idle", // idle | camera | mouse
   instrument: "trombone",
   running: false,
+  loopStarted: false,
+  cpuFallback: false,
+  rebuilding: false,
   debug: false,
   blowing: false,          // trombone gate (mouth open / mouse held)
   slide01: 0,
@@ -153,6 +156,7 @@ async function startCamera() {
     video.classList.add("active");
     tracker.attach(video);
     setStatus("Searching for you…", "warn");
+    startLoop(); // <- without this the camera feed never gets analyzed
   } catch (err) {
     console.warn(err);
     const denied = err?.name === "NotAllowedError" || err?.name === "NotFoundError";
@@ -164,6 +168,13 @@ async function startCamera() {
   }
 }
 
+/** Kick off the render loop exactly once, from whichever mode starts first. */
+function startLoop() {
+  if (app.loopStarted) return;
+  app.loopStarted = true;
+  requestAnimationFrame(loop);
+}
+
 function startMouseMode() {
   ensureAudio();
   hidePanel();
@@ -172,7 +183,7 @@ function startMouseMode() {
   video.classList.remove("active");
   fitCanvas();
   setStatus("Mouse mode", "ok");
-  requestAnimationFrame(loop);
+  startLoop();
 }
 
 function hidePanel() {
@@ -463,7 +474,9 @@ function updateStatusAndHints(tromboneState, accordionState) {
   if (app.instrument === "trombone") {
     if (!app.faceSeen) {
       setStatus("Searching for you…", "warn");
-      showHint("Show your face — the trombone hangs off your <em>mouth</em>");
+      showHint(tracker.detectCount > 90
+        ? "Still no face — try more <em>light</em>, or face the camera directly"
+        : "Show your face — the trombone hangs off your <em>mouth</em>");
     } else if (!tromboneState.visible) {
       setStatus("Tracking · need a hand", "warn");
       showHint("Reach out <em>one hand</em> to grab the trombone slide");
@@ -519,4 +532,25 @@ function loop(now) {
   if (!frameData) return;
   lastFrameState = frameData;
   frame(now);
+
+  // Watchdog: WebKit sometimes accepts the GPU delegate but then returns no
+  // detections at all. If we've processed plenty of frames and never seen a
+  // face (or errors keep piling up), rebuild the landmarkers on CPU once.
+  if (app.mode === "camera" && !app.cpuFallback && !app.rebuilding) {
+    const stalled =
+      (tracker.detectCount > 45 && tracker.framesWithFace === 0) ||
+      tracker.errorCount > 8;
+    if (stalled) {
+      app.rebuilding = true;
+      setStatus("GPU tracking stalled — switching to CPU…", "busy");
+      tracker.rebuildOnCpu((msg) => setStatus(msg + "…", "busy"))
+        .then(() => { app.cpuFallback = true; })
+        .catch((e) => {
+          console.warn(e);
+          setStatus("Tracking unavailable", "warn");
+          showHint("Tracking failed to start — try <em>mouse mode</em> (press M).");
+        })
+        .finally(() => { app.rebuilding = false; });
+    }
+  }
 }

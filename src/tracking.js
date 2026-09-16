@@ -40,21 +40,40 @@ export class Tracker {
     this.handLandmarker = null;
     this.video = null;
     this.lastVideoTime = -1;
+    // health stats, used by main.js to detect a stalled GPU pipeline
+    this.detectCount = 0;
+    this.framesWithFace = 0;
+    this.errorCount = 0;
   }
 
   /** Load WASM + both models. ~15 MB total, cached by the browser afterwards. */
   async init(onProgress = () => {}) {
     onProgress("Loading tracking engine…");
     const fileset = await FilesetResolver.forVisionTasks(WASM_BASE);
+    await this.createLandmarkers(fileset, "GPU", onProgress);
+  }
 
+  /**
+   * Some browsers (notably WebKit) accept the GPU delegate but then silently
+   * return no detections. Rebuilding on CPU is the reliable recovery.
+   */
+  async rebuildOnCpu(onProgress = () => {}) {
+    this.close();
+    onProgress("Reloading tracking on CPU");
+    const fileset = await FilesetResolver.forVisionTasks(WASM_BASE);
+    await this.createLandmarkers(fileset, "CPU", onProgress);
+  }
+
+  async createLandmarkers(fileset, delegate, onProgress) {
     // Some machines have no usable WebGL — fall back to the CPU delegate.
-    const create = async (Cls, label, opts) => {
+    const create = async (Cls, label, opts, wanted) => {
       try {
         return await Cls.createFromOptions(fileset, {
           ...opts,
-          baseOptions: { ...opts.baseOptions, delegate: "GPU" },
+          baseOptions: { ...opts.baseOptions, delegate: wanted },
         });
       } catch {
+        if (wanted === delegate) throw new Error(`${label} failed to load`);
         onProgress(`${label}: using CPU…`);
         return await Cls.createFromOptions(fileset, {
           ...opts,
@@ -69,7 +88,7 @@ export class Tracker {
       runningMode: "VIDEO",
       numFaces: 1,
       outputFaceBlendshapes: true, // for the calibrated jawOpen score
-    });
+    }, delegate);
 
     onProgress("Loading hand model…");
     this.handLandmarker = await create(HandLandmarker, "Hand model", {
@@ -78,8 +97,16 @@ export class Tracker {
       numHands: 2,
       minHandDetectionConfidence: 0.5,
       minTrackingConfidence: 0.5,
-    });
+    }, delegate);
     onProgress("Ready");
+  }
+
+  close() {
+    try { this.faceLandmarker?.close(); } catch { /* already gone */ }
+    try { this.handLandmarker?.close(); } catch { /* already gone */ }
+    this.faceLandmarker = null;
+    this.handLandmarker = null;
+    this.lastVideoTime = -1;
   }
 
   attach(video) {
@@ -89,9 +116,11 @@ export class Tracker {
 
   /**
    * Run detection for the current video frame.
-   * Returns null when the video hasn't advanced (call again next rAF).
+   * Returns null when the video hasn't advanced (call again next rAF) or the
+   * models are being rebuilt.
    */
   detect(nowMs) {
+    if (!this.faceLandmarker || !this.handLandmarker) return null;
     const video = this.video;
     if (!video || video.readyState < 2 || video.videoWidth === 0) return null;
     if (video.currentTime === this.lastVideoTime) return this._lastResult ?? null;
@@ -104,6 +133,7 @@ export class Tracker {
       const faceRes = this.faceLandmarker.detectForVideo(video, nowMs);
       const lm = faceRes?.faceLandmarks?.[0];
       if (lm) {
+        this.framesWithFace++;
         const upper = lm[LM_UPPER_LIP];
         const lower = lm[LM_LOWER_LIP];
         const eyeL = lm[LM_EYE_OUTER_L];
@@ -137,11 +167,13 @@ export class Tracker {
         });
       }
     } catch (err) {
+      this.errorCount++;
       // detectForVideo throws on monotonically-violating timestamps after
       // tab throttling; dropping one frame is fine.
-      if (!(err?.message ?? "").includes("timestamp")) console.warn(err);
+      if (this.errorCount % 10 === 1) console.warn(err);
     }
 
+    this.detectCount++;
     this._lastResult = { face, hands };
     return this._lastResult;
   }
