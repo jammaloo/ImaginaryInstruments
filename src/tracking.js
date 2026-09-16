@@ -40,14 +40,30 @@ export class Tracker {
     this.handLandmarker = null;
     this.video = null;
     this.lastVideoTime = -1;
+    this.readyPromise = null;
     // health stats, used by main.js to detect a stalled GPU pipeline
     this.detectCount = 0;
     this.framesWithFace = 0;
     this.errorCount = 0;
   }
 
-  /** Load WASM + both models. ~15 MB total, cached by the browser afterwards. */
-  async init(onProgress = () => {}) {
+  /**
+   * Load WASM + both models. ~15 MB total, cached by the browser afterwards.
+   * Safe to call repeatedly: the first call wins and later calls await it,
+   * so the page can preload at load time and startCamera() can await the
+   * same work when the user clicks.
+   */
+  init(onProgress = () => {}) {
+    if (!this.readyPromise) {
+      this.readyPromise = this.doInit(onProgress);
+      // Don't leave an unhandled rejection from the eager page-load call;
+      // callers that await init() still see the throw.
+      this.readyPromise.catch(() => {});
+    }
+    return this.readyPromise;
+  }
+
+  async doInit(onProgress = () => {}) {
     onProgress("Loading tracking engine…");
     const fileset = await FilesetResolver.forVisionTasks(WASM_BASE);
     await this.createLandmarkers(fileset, "GPU", onProgress);
@@ -100,6 +116,7 @@ export class Tracker {
     }, delegate);
     onProgress("Ready");
   }
+
 
   close() {
     try { this.faceLandmarker?.close(); } catch { /* already gone */ }

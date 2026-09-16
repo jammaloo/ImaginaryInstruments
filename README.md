@@ -49,9 +49,10 @@ python3 -m http.server 8000
 # then visit http://localhost:8000
 ```
 
-First load downloads the MediaPipe tracking models (~15 MB); they're cached
-after that. Works best in Chrome/Edge/Safari on a desktop or laptop with a
-webcam.
+First load downloads the MediaPipe tracking models (~15 MB) — the download
+starts the moment the page opens, so by the time you click "Start" the
+camera comes up almost instantly. Models are cached for future visits.
+Works best in Chrome/Edge/Safari on a desktop or laptop with a webcam.
 
 ## How it works
 

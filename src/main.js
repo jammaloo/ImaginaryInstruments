@@ -260,6 +260,22 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+/* ---------------- model preload ---------------- */
+
+// Start pulling the ~15 MB of tracking models the moment the page opens, so
+// the camera starts almost instantly when the user clicks. startCamera()
+// awaits this same promise (init() is idempotent).
+tracker.init((msg) => {
+  const el = document.getElementById("modelStatus");
+  if (!el) return;
+  el.textContent = msg === "Ready"
+    ? "Models ready — the camera will start instantly ✓"
+    : `${msg} Feel free to keep reading, we'll be ready`;
+}).catch(() => {
+  const el = document.getElementById("modelStatus");
+  if (el) el.textContent = "Couldn't preload models — they'll load when you press start";
+});
+
 /* ---------------- per-frame tracking ---------------- */
 
 /** Convert normalized video coords to mirrored canvas px. */
