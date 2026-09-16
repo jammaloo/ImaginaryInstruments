@@ -41,6 +41,11 @@ export class Tracker {
     this.video = null;
     this.lastVideoTime = -1;
     this.readyPromise = null;
+    // Run face detection only every Nth processed frame (hands run every
+    // frame — they move faster). The face result is cached between runs.
+    this.faceStride = 2;
+    this._frameParity = 0;
+    this._cachedFace = null;
     // health stats, used by main.js to detect a stalled GPU pipeline
     this.detectCount = 0;
     this.framesWithFace = 0;
@@ -72,15 +77,17 @@ export class Tracker {
   /**
    * Some browsers (notably WebKit) accept the GPU delegate but then silently
    * return no detections. Rebuilding on CPU is the reliable recovery.
+   * Blendshapes are skipped on CPU — they add real milliseconds there, and
+   * the geometric mouth-openness fallback works without them.
    */
   async rebuildOnCpu(onProgress = () => {}) {
     this.close();
     onProgress("Reloading tracking on CPU");
     const fileset = await FilesetResolver.forVisionTasks(WASM_BASE);
-    await this.createLandmarkers(fileset, "CPU", onProgress);
+    await this.createLandmarkers(fileset, "CPU", onProgress, false);
   }
 
-  async createLandmarkers(fileset, delegate, onProgress) {
+  async createLandmarkers(fileset, delegate, onProgress, wantBlendshapes = true) {
     // Some machines have no usable WebGL — fall back to the CPU delegate.
     const create = async (Cls, label, opts, wanted) => {
       try {
@@ -103,7 +110,7 @@ export class Tracker {
       baseOptions: { modelAssetPath: FACE_MODEL },
       runningMode: "VIDEO",
       numFaces: 1,
-      outputFaceBlendshapes: true, // for the calibrated jawOpen score
+      outputFaceBlendshapes: wantBlendshapes, // for the calibrated jawOpen score
     }, delegate);
 
     onProgress("Loading hand model…");
@@ -124,6 +131,9 @@ export class Tracker {
     this.faceLandmarker = null;
     this.handLandmarker = null;
     this.lastVideoTime = -1;
+    this._frameParity = 0;
+    this._cachedFace = null;
+    this._lastResult = null;
   }
 
   attach(video) {
@@ -132,7 +142,9 @@ export class Tracker {
   }
 
   /**
-   * Run detection for the current video frame.
+   * Run detection for the current video frame. Hands are detected every
+   * processed frame; the face runs every `faceStride` frames with the last
+   * result cached in between (positions are smoothed downstream anyway).
    * Returns null when the video hasn't advanced (call again next rAF) or the
    * models are being rebuilt.
    */
@@ -145,32 +157,40 @@ export class Tracker {
 
     let face = null;
     let hands = [];
+    const runFace = this._frameParity % this.faceStride === 0;
+    this._frameParity++;
 
     try {
-      const faceRes = this.faceLandmarker.detectForVideo(video, nowMs);
-      const lm = faceRes?.faceLandmarks?.[0];
-      if (lm) {
-        this.framesWithFace++;
-        const upper = lm[LM_UPPER_LIP];
-        const lower = lm[LM_LOWER_LIP];
-        const eyeL = lm[LM_EYE_OUTER_L];
-        const eyeR = lm[LM_EYE_OUTER_R];
-        const eyeDist = dist(eyeL, eyeR) || 1e-4;
+      if (runFace) {
+        const faceRes = this.faceLandmarker.detectForVideo(video, nowMs);
+        const lm = faceRes?.faceLandmarks?.[0];
+        if (lm) {
+          this.framesWithFace++;
+          const upper = lm[LM_UPPER_LIP];
+          const lower = lm[LM_LOWER_LIP];
+          const eyeL = lm[LM_EYE_OUTER_L];
+          const eyeR = lm[LM_EYE_OUTER_R];
+          const eyeDist = dist(eyeL, eyeR) || 1e-4;
 
-        // Prefer the calibrated blendshape score; fall back to lip geometry
-        const cats = faceRes.faceBlendshapes?.[0]?.categories ?? [];
-        const jaw = cats.find((c) => c.categoryName === "jawOpen");
-        const geometric = Math.min(1, dist(upper, lower) / (eyeDist * 0.55));
-        const openness = jaw ? jaw.score : geometric;
+          // Prefer the calibrated blendshape score; fall back to lip geometry
+          const cats = faceRes.faceBlendshapes?.[0]?.categories ?? [];
+          const jaw = cats.find((c) => c.categoryName === "jawOpen");
+          const geometric = Math.min(1, dist(upper, lower) / (eyeDist * 0.55));
+          const openness = jaw ? jaw.score : geometric;
 
-        face = {
-          mouth: {
-            x: (upper.x + lower.x) / 2,
-            y: (upper.y + lower.y) / 2,
-          },
-          openness,
-          eyeDist,
-        };
+          this._cachedFace = face = {
+            mouth: {
+              x: (upper.x + lower.x) / 2,
+              y: (upper.y + lower.y) / 2,
+            },
+            openness,
+            eyeDist,
+          };
+        } else {
+          this._cachedFace = null; // genuinely no face this attempt
+        }
+      } else {
+        face = this._cachedFace;
       }
 
       const handRes = this.handLandmarker.detectForVideo(video, nowMs);

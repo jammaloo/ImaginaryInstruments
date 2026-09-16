@@ -133,16 +133,27 @@ class TromboneVoice {
     const t = this.ctx.currentTime;
     if (!active) {
       this.blowing = false;
-      this.out.gain.setTargetAtTime(0, t, 0.07); // breath release
+      if (!this._gated) {
+        this._gated = true;
+        this.out.gain.setTargetAtTime(0, t, 0.07); // breath release
+      }
       return;
     }
+    this._gated = false;
     this.blowing = true;
     this.freq = freq;
-    this.osc1.frequency.setTargetAtTime(freq, t, 0.03);
-    this.osc2.frequency.setTargetAtTime(freq, t, 0.03);
-    // Brighten as pitch rises; keeps the tone consistent across the slide
-    this.filter.frequency.setTargetAtTime(Math.min(5200, freq * 4.5 + 250), t, 0.04);
-    this.out.gain.setTargetAtTime(0.9 * level, t, 0.035); // quick-ish attack, no click
+    if (Math.abs(freq - (this._lastFreq ?? -1)) > 0.1) {
+      this._lastFreq = freq;
+      this.osc1.frequency.setTargetAtTime(freq, t, 0.03);
+      this.osc2.frequency.setTargetAtTime(freq, t, 0.03);
+      // Brighten as pitch rises; keeps the tone consistent across the slide
+      this.filter.frequency.setTargetAtTime(Math.min(5200, freq * 4.5 + 250), t, 0.04);
+    }
+    const target = 0.9 * level;
+    if (Math.abs(target - (this._lastGain ?? -1)) > 0.005) {
+      this._lastGain = target;
+      this.out.gain.setTargetAtTime(target, t, 0.035); // quick-ish attack, no click
+    }
   }
 
   silence() {
@@ -189,13 +200,23 @@ class AccordionVoice {
   update({ active, freq, volume }) {
     const t = this.ctx.currentTime;
     if (!active) {
-      this.out.gain.setTargetAtTime(0, t, 0.25); // bellows settling
+      if (!this._gated) {
+        this._gated = true;
+        this.out.gain.setTargetAtTime(0, t, 0.25); // bellows settling
+      }
       return;
     }
-    for (const { osc, ratio } of this.oscs) {
-      osc.frequency.setTargetAtTime(freq * ratio, t, 0.045); // audible reed glide
+    this._gated = false;
+    if (Math.abs(freq - (this._lastFreq ?? -1)) > 0.1) {
+      this._lastFreq = freq;
+      for (const { osc, ratio } of this.oscs) {
+        osc.frequency.setTargetAtTime(freq * ratio, t, 0.045); // audible reed glide
+      }
     }
-    this.out.gain.setTargetAtTime(0.85 * volume, t, volume > 0.02 ? 0.06 : 0.22);
+    if (Math.abs(volume - (this._lastVol ?? -1)) > 0.005) {
+      this._lastVol = volume;
+      this.out.gain.setTargetAtTime(0.85 * volume, t, volume > 0.02 ? 0.06 : 0.22);
+    }
   }
 
   silence() {

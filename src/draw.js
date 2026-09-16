@@ -12,6 +12,19 @@ const BRASS_LIGHT = "#ffe9b0";
 const BRASS_MID = "#e3b04b";
 const BRASS_DARK = "#8a5a1d";
 
+/** Shadow state is sticky on the context, so set it explicitly both ways. */
+function setShadow(ctx, fx, color, blur, offsetY = 0) {
+  if (fx) {
+    ctx.shadowColor = color;
+    ctx.shadowBlur = blur;
+    ctx.shadowOffsetY = offsetY;
+  } else {
+    ctx.shadowColor = "transparent";
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+  }
+}
+
 function brassGradient(ctx, x0, y0, x1, y1) {
   const g = ctx.createLinearGradient(x0, y0, x1, y1);
   g.addColorStop(0, BRASS_DARK);
@@ -32,7 +45,7 @@ function brassStroke(ctx, s, widthUnits) {
 /* Trombone — mouthpiece at the mouth, slide reaching out to the hand  */
 /* ------------------------------------------------------------------ */
 
-export function drawTrombone(ctx, { mouth, hand, blowing, scale, time }) {
+export function drawTrombone(ctx, { mouth, hand, blowing, scale, time, fx = true }) {
   const dx = hand.x - mouth.x;
   const dy = hand.y - mouth.y;
   const len = Math.hypot(dx, dy);
@@ -45,9 +58,7 @@ export function drawTrombone(ctx, { mouth, hand, blowing, scale, time }) {
   ctx.rotate(angle);
 
   // Soft drop shadow so the instrument feels stuck onto the video
-  ctx.shadowColor = "rgba(0,0,0,0.55)";
-  ctx.shadowBlur = s * 0.5;
-  ctx.shadowOffsetY = s * 0.16;
+  setShadow(ctx, fx, "rgba(0,0,0,0.55)", s * 0.5, s * 0.16);
 
   const bellY = -s * 0.36;      // bell tube rides above the slide
   const slideGapY = s * 0.34;   // distance between the two slide tubes
@@ -85,8 +96,10 @@ export function drawTrombone(ctx, { mouth, hand, blowing, scale, time }) {
   ctx.stroke();
 
   // --- bell flare ---
-  ctx.shadowBlur = blowing ? s * 1.1 : s * 0.5;
-  if (blowing) ctx.shadowColor = "rgba(255, 200, 90, 0.9)";
+  if (blowing && fx) {
+    ctx.shadowColor = "rgba(255, 200, 90, 0.9)";
+    ctx.shadowBlur = s * 1.1;
+  }
   const flareLen = s * 0.36;
   const rimR = s * 0.52;
   const coneX = bellX1 - flareLen;
@@ -127,8 +140,10 @@ export function drawTrombone(ctx, { mouth, hand, blowing, scale, time }) {
     ctx.rotate(angle);
     ctx.strokeStyle = "rgba(255, 228, 158, 0.95)";
     ctx.lineCap = "round";
-    ctx.shadowColor = "rgba(255, 210, 120, 0.9)";
-    ctx.shadowBlur = s * 0.25;
+    if (fx) {
+      ctx.shadowColor = "rgba(255, 210, 120, 0.9)";
+      ctx.shadowBlur = s * 0.25;
+    }
     for (let i = 0; i < 3; i++) {
       const phase = (time * 1.6 + i / 3) % 1;             // 0..1, repeating
       const r = s * (0.5 + phase * 1.2);
@@ -147,7 +162,7 @@ export function drawTrombone(ctx, { mouth, hand, blowing, scale, time }) {
 /* Accordion — stretches between both hands, bellows in the middle     */
 /* ------------------------------------------------------------------ */
 
-export function drawAccordion(ctx, { left, right, volume, scale, time }) {
+export function drawAccordion(ctx, { left, right, volume, scale, time, fx = true }) {
   const mx = (left.x + right.x) / 2;
   const my = (left.y + right.y) / 2;
   const rawLen = Math.hypot(right.x - left.x, right.y - left.y);
@@ -159,9 +174,7 @@ export function drawAccordion(ctx, { left, right, volume, scale, time }) {
   ctx.translate(mx, my);
   ctx.rotate(angle);
 
-  ctx.shadowColor = "rgba(0,0,0,0.5)";
-  ctx.shadowBlur = s * 0.45;
-  ctx.shadowOffsetY = s * 0.14;
+  setShadow(ctx, fx, "rgba(0,0,0,0.5)", s * 0.45, s * 0.14);
 
   const half = len / 2;
   const plateW = s * 0.62;

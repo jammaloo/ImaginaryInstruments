@@ -26,6 +26,16 @@ const BLOW_ON = 0.16, BLOW_OFF = 0.09;           // jawOpen hysteresis
 const MOUSE_MOUTH = { x: 0.5, y: 0.28 };
 const MOUSE_EYE_DIST = 0.075;                    // virtual eye width (fraction of canvas width)
 
+/* Quality tiers — the governor steps between them based on measured fps.
+ * The expensive bits are canvas shadow/glow rasterization (slow in WebKit)
+ * and per-frame inference, so tiers trade those off. */
+const QUALITY_TIERS = {
+  high: { fx: true, canvasMaxWidth: 1920, faceStride: 2 },
+  med: { fx: true, canvasMaxWidth: 1600, faceStride: 2 },
+  low: { fx: false, canvasMaxWidth: 1280, faceStride: 3 },
+};
+const TIERS = ["low", "med", "high"];
+
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -69,6 +79,7 @@ const app = {
   loopStarted: false,
   cpuFallback: false,
   rebuilding: false,
+  quality: "med",           // low | med | high — see QUALITY_TIERS
   debug: false,
   blowing: false,          // trombone gate (mouth open / mouse held)
   slide01: 0,
@@ -80,6 +91,15 @@ const app = {
   handCount: 0,
   fps: 0,
 };
+
+function applyQuality(tier) {
+  app.quality = tier;
+  const q = QUALITY_TIERS[tier];
+  tracker.faceStride = q.faceStride;
+  video.classList.toggle("fx", q.fx);
+  if (app.mode !== "idle") fitCanvas();
+  return tier;
+}
 
 const engine = new AudioEngine();
 const tracker = new Tracker();
@@ -106,7 +126,9 @@ const sm = {
 window.__II_DEBUG = {
   app,
   engine,
+  tracker,
   errors: [],
+  applyQuality,
   /** Manually run one frame with the mouse rig — used by automated tests
    *  when rAF is suspended (background webviews). */
   tick: (now) => {
@@ -120,8 +142,10 @@ window.addEventListener("error", (e) => window.__II_DEBUG.errors.push(String(e.m
 function fitCanvas() {
   let w, h;
   if (app.mode === "camera" && video.videoWidth) {
-    // match the video's aspect ratio; extra resolution just sharpens the overlay
-    const factor = Math.min(window.devicePixelRatio || 1, 2, 2600 / video.videoWidth);
+    // match the video's aspect ratio; cap the total so fill/stroke raster
+    // work stays cheap on weak GPUs (shadows are the expensive part)
+    const maxWidth = QUALITY_TIERS[app.quality].canvasMaxWidth;
+    const factor = Math.min(window.devicePixelRatio || 1, 2, maxWidth / video.videoWidth);
     w = video.videoWidth * factor;
     h = video.videoHeight * factor;
   } else {
@@ -147,8 +171,10 @@ async function startCamera() {
     await tracker.init((msg) => setStatus(msg + "…", "busy"));
 
     setStatus("Requesting camera…", "busy");
+    // 640×480 is plenty for tracking at webcam distances and keeps both the
+    // camera pipeline and inference feed cheap
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+      video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
       audio: false,
     });
     video.srcObject = stream;
@@ -265,6 +291,7 @@ document.addEventListener("visibilitychange", () => {
 // Start pulling the ~15 MB of tracking models the moment the page opens, so
 // the camera starts almost instantly when the user clicks. startCamera()
 // awaits this same promise (init() is idempotent).
+applyQuality("med"); // also sets tracker stride + video filter class up front
 tracker.init((msg) => {
   const el = document.getElementById("modelStatus");
   if (!el) return;
@@ -419,6 +446,7 @@ function render(frame, tromboneState, accordionState, now) {
 
   const eyePx = tromboneState.eyePx || canvas.width * 0.075;
   const scale = eyePx * 2.3;
+  const fx = QUALITY_TIERS[app.quality].fx;
 
   if (app.instrument === "trombone" && tromboneState.visible) {
     drawTrombone(ctx, {
@@ -427,6 +455,7 @@ function render(frame, tromboneState, accordionState, now) {
       blowing: tromboneState.blowing,
       scale,
       time: t,
+      fx,
     });
   }
   if (app.instrument === "accordion" && accordionState.visible) {
@@ -436,6 +465,7 @@ function render(frame, tromboneState, accordionState, now) {
       volume: accordionState.volume,
       scale,
       time: t,
+      fx,
     });
   }
 
@@ -452,7 +482,7 @@ function render(frame, tromboneState, accordionState, now) {
     ctx.fillStyle = "rgba(255,255,255,0.75)";
     ctx.font = `${Math.max(13, canvas.width * 0.014)}px ui-monospace, monospace`;
     const lines = [
-      `mode=${app.mode} fps=${app.fps.toFixed(0)} hands=${app.handCount} face=${app.faceSeen}`,
+      `mode=${app.mode} fps=${app.fps.toFixed(0)} quality=${app.quality}${app.cpuFallback ? " (cpu)" : ""} hands=${app.handCount} face=${app.faceSeen}`,
       `slide=${app.slide01.toFixed(2)} spread=${app.spread01.toFixed(2)} raw=${(app.spreadRaw || 0).toFixed(2)}`,
       `open=${(frame.face?.openness ?? 0).toFixed(2)} blowing=${app.blowing} vol=${app.volume.toFixed(2)} freq=${app.freq.toFixed(1)}Hz`,
     ];
@@ -477,6 +507,7 @@ function escapeHtml(s) {
 }
 
 function updateStatusAndHints(tromboneState, accordionState) {
+  const cpu = app.cpuFallback ? " · CPU" : "";
   if (app.mode === "mouse") {
     setStatus("Mouse mode", "ok");
     showHint(app.instrument === "trombone"
@@ -489,29 +520,29 @@ function updateStatusAndHints(tromboneState, accordionState) {
 
   if (app.instrument === "trombone") {
     if (!app.faceSeen) {
-      setStatus("Searching for you…", "warn");
+      setStatus(`Searching for you…${cpu}`, "warn");
       showHint(tracker.detectCount > 90
         ? "Still no face — try more <em>light</em>, or face the camera directly"
         : "Show your face — the trombone hangs off your <em>mouth</em>");
     } else if (!tromboneState.visible) {
-      setStatus("Tracking · need a hand", "warn");
+      setStatus(`Tracking · need a hand${cpu}`, "warn");
       showHint("Reach out <em>one hand</em> to grab the trombone slide");
     } else if (!app.blowing) {
-      setStatus("Tracking ✓", "ok");
+      setStatus(`Tracking ✓${cpu}`, "ok");
       showHint("Open your <em>mouth</em> to blow — pull your hand to slide 🎺");
     } else {
-      setStatus("Playing 🎺", "ok");
+      setStatus(`Playing 🎺${cpu}`, "ok");
       showHint("Pull the slide out for <em>lower</em> notes, in for higher");
     }
   } else {
     if (app.handCount < 2) {
-      setStatus("Tracking · need both hands", "warn");
+      setStatus(`Tracking · need both hands${cpu}`, "warn");
       showHint("Show <em>both hands</em> — one on each end of the accordion");
     } else if (app.volume < 0.08) {
-      setStatus("Tracking ✓", "ok");
+      setStatus(`Tracking ✓${cpu}`, "ok");
       showHint("Pump your hands <em>together and apart</em> to squeeze the bellows");
     } else {
-      setStatus("Playing 🪗", "ok");
+      setStatus(`Playing 🪗${cpu}`, "ok");
       showHint("Wider apart = <em>higher</em> notes — keep pumping to keep singing");
     }
   }
@@ -524,7 +555,6 @@ function frame(now) {
   const dt = now - lastFrame;
   lastFrame = now;
   app.fps = app.fps ? lerp(app.fps, 1000 / Math.max(dt, 1), 0.08) : 60;
-  fpsEl.textContent = `${app.fps.toFixed(0)} fps`;
 
   if (app.mode === "camera" && (video.videoWidth !== canvas.width || video.videoHeight !== canvas.height)) {
     fitCanvas();
@@ -536,9 +566,39 @@ function frame(now) {
 
   if (now - (frame._lastUI ?? 0) > 300) { // don't thrash the DOM every frame
     frame._lastUI = now;
+    fpsEl.textContent = `${app.fps.toFixed(0)} fps`;
     updateStatusAndHints(tromboneState, accordionState);
   }
 }
+
+/**
+ * Adaptive quality: if the render loop can't hold ~34fps we step down a tier
+ * (smaller canvas, no glow raster, sparser face inference); if it comfortably
+ * exceeds ~52fps for a while we step back up. Hysteresis keeps it stable.
+ */
+function qualityGovernor(now) {
+  if (app.mode !== "camera" || app.rebuilding) return;
+  governor._lastCheck ??= now;
+  governor._goodSince ??= now;
+  if (now - governor._lastCheck < 1500) return;
+  governor._lastCheck = now;
+
+  const fps = app.fps;
+  if (fps > 5 && fps < 34) {
+    governor._goodSince = now;
+    const idx = TIERS.indexOf(app.quality);
+    if (idx > 0) applyQuality(TIERS[idx - 1]);
+  } else if (fps > 52) {
+    const idx = TIERS.indexOf(app.quality);
+    if (idx < TIERS.length - 1 && now - governor._goodSince > 8000) {
+      governor._goodSince = now;
+      applyQuality(TIERS[idx + 1]);
+    }
+  } else {
+    governor._goodSince = now;
+  }
+}
+const governor = {};
 
 function loop(now) {
   if (!app.running) return;
@@ -548,6 +608,7 @@ function loop(now) {
   if (!frameData) return;
   lastFrameState = frameData;
   frame(now);
+  qualityGovernor(now);
 
   // Watchdog: WebKit sometimes accepts the GPU delegate but then returns no
   // detections at all. If we've processed plenty of frames and never seen a
@@ -559,6 +620,7 @@ function loop(now) {
     if (stalled) {
       app.rebuilding = true;
       setStatus("GPU tracking stalled — switching to CPU…", "busy");
+      applyQuality("low"); // CPU inference is the heavy path; shed visuals too
       tracker.rebuildOnCpu((msg) => setStatus(msg + "…", "busy"))
         .then(() => { app.cpuFallback = true; })
         .catch((e) => {

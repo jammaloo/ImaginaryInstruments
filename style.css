@@ -42,7 +42,7 @@ html, body {
   object-fit: cover;
 }
 #video { transform: scaleX(-1); } /* selfie mirror */
-#video.active { filter: saturate(0.9) contrast(1.03) brightness(0.92); }
+#video.active.fx { filter: saturate(0.9) contrast(1.03) brightness(0.92); }
 
 /* ---------- top bar ---------- */
 #topbar {

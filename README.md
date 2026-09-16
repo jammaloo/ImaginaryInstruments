@@ -54,6 +54,16 @@ starts the moment the page opens, so by the time you click "Start" the
 camera comes up almost instantly. Models are cached for future visits.
 Works best in Chrome/Edge/Safari on a desktop or laptop with a webcam.
 
+## Performance
+
+The app adapts to your machine. A quality governor watches the render fps
+and steps between three tiers — trading canvas size, glow/shadow effects,
+and face-inference rate — to keep the loop smooth; the `D` debug overlay
+shows the current tier. Camera capture runs at 640×480 (plenty for
+tracking), hands are detected every frame, and the face every other frame.
+If the GPU tracker stalls on your browser, it automatically rebuilds on the
+CPU and drops to the leanest tier (the status pill shows "· CPU").
+
 ## How it works
 
 - **Tracking** — [MediaPipe Tasks Vision](https://developers.google.com/mediapipe)
