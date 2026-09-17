@@ -59,6 +59,7 @@ export class AudioEngine {
 
     this.trombone = new TromboneVoice(ctx, master);
     this.accordion = new AccordionVoice(ctx, master);
+    this.maraca = new MaracaVoice(ctx, master);
   }
 
   setMuted(muted) {
@@ -222,4 +223,66 @@ class AccordionVoice {
   silence() {
     this.out.gain.setTargetAtTime(0, this.ctx.currentTime, 0.1);
   }
+}
+
+/**
+ * Maracas are event-driven: each detected shake reversal fires hit(vol),
+ * a short noise burst through a high bandpass — the beads hitting the
+ * gourd. Harder shakes schedule a couple of extra micro-bursts, which
+ * reads as a denser rattle.
+ */
+class MaracaVoice {
+  constructor(ctx, dest) {
+    this.ctx = ctx;
+    this.bus = ctx.createGain();
+    this.bus.gain.value = 0.9;
+    this.bus.connect(dest);
+    this.hitCount = 0; // observability for tests/debug
+
+    // one shared second of white noise, sliced at random offsets per burst
+    const len = Math.floor(ctx.sampleRate);
+    this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = this.noise.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  }
+
+  hit(vol) {
+    const t = this.ctx.currentTime;
+    const bursts = vol > 0.6 ? 3 : vol > 0.25 ? 2 : 1;
+    for (let i = 0; i < bursts; i++) {
+      const start = t + i * 0.012;
+      const amp = vol * (1 - i * 0.25);
+
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.noise;
+      src.playbackRate.value = 0.9 + Math.random() * 0.3;
+
+      // sizzle band 4–6kHz + a touch of gourd warmth at ~1.6kHz
+      const bp = this.ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.value = 4200 + Math.random() * 1800;
+      bp.Q.value = 1.4;
+      const warm = this.ctx.createBiquadFilter();
+      warm.type = "bandpass";
+      warm.frequency.value = 1500 + Math.random() * 300;
+      warm.Q.value = 2.5;
+      const warmGain = this.ctx.createGain();
+      warmGain.gain.value = 0.35;
+
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0, start);
+      g.gain.linearRampToValueAtTime(amp, start + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.001, start + 0.09 + 0.05 * vol);
+
+      src.connect(bp).connect(g);
+      src.connect(warm).connect(warmGain).connect(g);
+      g.connect(this.bus);
+      src.start(start, Math.random() * 0.8);
+      src.stop(start + 0.25);
+    }
+    this.hitCount++;
+  }
+
+  /** One-shots decay on their own; nothing to silence. */
+  silence() {}
 }

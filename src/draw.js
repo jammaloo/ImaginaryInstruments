@@ -339,3 +339,104 @@ export function drawHandSkeleton(ctx, points, w, h, color = "rgba(125,211,252,0.
     ctx.fill();
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Maraca — one per hand, squashes and throws beads when shaken        */
+/* ------------------------------------------------------------------ */
+
+export function drawMaraca(ctx, { palm, angle, intensity, hitAge, scale, fx = true }) {
+  const s = scale;
+  const I = Math.min(1, intensity); // 0 calm .. 1 full-tilt shake
+  const squashX = 1 + 0.16 * I;
+  const squashY = 1 - 0.16 * I;
+
+  ctx.save();
+  ctx.translate(palm.x, palm.y);
+  ctx.rotate(angle);
+
+  setShadow(ctx, fx, "rgba(0,0,0,0.5)", s * 0.4, s * 0.14);
+
+  // --- wooden handle (the hand grips here) ---
+  const hg = ctx.createLinearGradient(-s * 0.09, 0, s * 0.09, 0);
+  hg.addColorStop(0, "#8a5a2b");
+  hg.addColorStop(0.5, "#d9a96b");
+  hg.addColorStop(1, "#8a5a2b");
+  ctx.fillStyle = hg;
+  roundRectPath(ctx, -s * 0.085, -s * 0.18, s * 0.17, s * 0.95, s * 0.08);
+  ctx.fill();
+  // grip rings
+  ctx.strokeStyle = "rgba(90,55,20,0.5)";
+  ctx.lineWidth = s * 0.02;
+  ctx.beginPath();
+  for (let i = 0; i < 3; i++) {
+    const y = s * (0.2 + i * 0.2);
+    ctx.moveTo(-s * 0.085, y);
+    ctx.lineTo(s * 0.085, y);
+  }
+  ctx.stroke();
+
+  // --- gourd ---
+  const gy = -s * 0.66;
+  ctx.save();
+  ctx.translate(0, gy);
+  ctx.scale(squashX, squashY);
+  const gg = ctx.createLinearGradient(0, -s * 0.5, 0, s * 0.5);
+  gg.addColorStop(0, "#f7e3b8");
+  gg.addColorStop(0.55, "#e8c281");
+  gg.addColorStop(1, "#c98f4a");
+  ctx.fillStyle = gg;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, s * 0.44, s * 0.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(120,80,30,0.45)";
+  ctx.lineWidth = s * 0.025;
+  ctx.stroke();
+
+  // painted bands (matching the accordion's case red)
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(0, 0, s * 0.44, s * 0.5, 0, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = "#a3123c";
+  ctx.fillRect(-s * 0.5, -s * 0.5, s * 1.0, s * 0.12);
+  ctx.fillRect(-s * 0.5, s * 0.1, s * 1.0, s * 0.08);
+  // gourd ridges
+  ctx.strokeStyle = "rgba(160,110,50,0.5)";
+  ctx.lineWidth = s * 0.02;
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.22, -s * 0.46);
+  ctx.quadraticCurveTo(-s * 0.3, 0, -s * 0.22, s * 0.46);
+  ctx.moveTo(s * 0.22, -s * 0.46);
+  ctx.quadraticCurveTo(s * 0.3, 0, s * 0.22, s * 0.46);
+  ctx.stroke();
+  ctx.restore();
+  ctx.restore();
+
+  // shake sheen while rattling
+  if (I > 0.05 && fx) {
+    ctx.shadowColor = "rgba(255, 226, 160, 0.9)";
+    ctx.shadowBlur = s * I * 0.9;
+    ctx.strokeStyle = `rgba(255,226,160,${0.4 * I})`;
+    ctx.lineWidth = s * 0.04;
+    ctx.beginPath();
+    ctx.ellipse(0, gy, s * 0.46 * squashX, s * 0.52 * squashY, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    setShadow(ctx, false);
+  }
+
+  // --- beads flying out of a fresh hit ---
+  const phase = Math.min(1, hitAge / 0.35); // 0 just hit .. 1 settled
+  if (phase < 1) {
+    const fade = 1 - phase;
+    ctx.fillStyle = `rgba(250, 230, 180, ${0.9 * fade})`;
+    for (let i = 0; i < 6; i++) {
+      const a = -Math.PI / 2 + (i - 2.5) * 0.5;
+      const r = s * (0.45 + phase * 0.55);
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * r, gy + Math.sin(a) * r, s * 0.05 * fade + s * 0.015, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  ctx.restore();
+}

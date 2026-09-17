@@ -16,13 +16,16 @@
 
 import { AudioEngine } from "./audio.js";
 import { Tracker } from "./tracking.js";
-import { drawTrombone, drawAccordion, drawHandSkeleton } from "./draw.js";
+import { drawTrombone, drawAccordion, drawMaraca, drawHandSkeleton } from "./draw.js";
 
 /* ---------------- tuning ---------------- */
 const TROMBONE_EXTENT = { min: 1.0, max: 4.2 };  // mouth↔hand distance in eye-widths -> slide 0..1
 const ACCORDION_SPREAD = { min: 2.2, max: 7.5 }; // hand separation in eye-widths -> scale index
 const BELLOWS_SPEED = 5.0;                       // eye-widths/sec that maps to full volume
 const BLOW_ON = 0.16, BLOW_OFF = 0.09;           // jawOpen hysteresis
+const MARACA_SHAKE_SPEED = 6;                    // eye-widths/sec before a reversal counts as a shake
+const MARACA_FULL_SPEED = 26;                    // eye-widths/sec for full-volume rattle
+const MARACA_COOLDOWN_MS = 70;                   // min gap between hits, per hand
 const MOUSE_MOUTH = { x: 0.5, y: 0.28 };
 const MOUSE_EYE_DIST = 0.075;                    // virtual eye width (fraction of canvas width)
 
@@ -86,6 +89,7 @@ const app = {
   spread01: 0,
   spreadRaw: 0,
   volume: 0,
+  maracaVolume: 0,
   freq: 0,
   faceSeen: false,
   handCount: 0,
@@ -115,12 +119,17 @@ const sm = {
   eye: new Smooth(0.2),
   open: new Smooth(0.5),
   palmA: new Smooth(0.4), // trombone hand
-  palmL: new Smooth(0.4), // accordion left
-  palmR: new Smooth(0.4),
+  palmL: new Smooth(0.4), // accordion/maraca left
+  palmR: new Smooth(0.4), // accordion/maraca right
   slide: new Smooth(0.3),
   spread: new Smooth(0.4),
   volume: new Smooth(0.5),
 };
+
+// maraca shake trackers, one per hand slot (sorted left/right)
+const maracaSlots = [0, 1].map(() => ({
+  pos: null, vx: 0, vy: 0, lastT: null, lastHit: -1e9, intensity: 0, angle: 0,
+}));
 
 /* ---------------- debug hooks (also handy for automated testing) ---------------- */
 window.__II_DEBUG = {
@@ -236,6 +245,12 @@ function setInstrument(name) {
   sm.spread.reset();
   sm.volume.reset();
   app.spreadRaw = 0;
+  for (const slot of maracaSlots) {
+    slot.pos = null;
+    slot.lastT = null;
+    slot.intensity = 0;
+  }
+  app.maracaVolume = 0;
 }
 
 $("startBtn").addEventListener("click", startCamera);
@@ -267,6 +282,7 @@ window.addEventListener("keydown", (e) => {
   if (e.repeat) return;
   if (e.key === "1") setInstrument("trombone");
   else if (e.key === "2") setInstrument("accordion");
+  else if (e.key === "3") setInstrument("maracas");
   else if (e.key.toLowerCase() === "d") app.debug = !app.debug;
   else if (e.key.toLowerCase() === "m" && app.mode !== "mouse") startMouseMode();
   else if (e.code === "Space" && app.mode === "mouse") {
@@ -334,10 +350,12 @@ function readMouseFrame() {
   const right = { x: pointer.x * canvas.width, y: pointer.y * canvas.height };
   const left = { x: (1 - pointer.x) * canvas.width, y: pointer.y * canvas.height };
   app.faceSeen = true;
-  app.handCount = app.instrument === "accordion" ? 2 : 1;
+  // the accordion needs two mirrored hands; the others play the pointer alone
+  const twoHands = app.instrument === "accordion";
+  app.handCount = twoHands ? 2 : 1;
   return {
     face: { mouth, eyePx, openness: pointer.down || pointer.space ? 1 : 0 },
-    hands: [{ palm: right }, { palm: left }],
+    hands: twoHands ? [{ palm: right }, { palm: left }] : [{ palm: right }],
   };
 }
 
@@ -426,9 +444,71 @@ function updateAccordion(frame, now) {
   return { visible: true, left, right, spread01, volume: app.volume };
 }
 
+/**
+ * Maracas: one per hand. A "hit" fires when the hand's velocity vector
+ * flips direction (the beads slam into the gourd, like a real shake);
+ * speed sets the volume. Velocity is measured on raw positions — the
+ * palm smoother would damp the very oscillation we're listening for.
+ */
+function updateMaracas(frame, now) {
+  const eyePx = frame.face?.eyePx || canvas.width * 0.075;
+  const active = app.instrument === "maracas";
+  const sorted = frame.hands.length >= 2
+    ? [...frame.hands].sort((a, b) => a.palm.x - b.palm.x)
+    : frame.hands;
+
+  const out = [];
+  let maxI = 0;
+  for (let i = 0; i < 2; i++) {
+    const slot = maracaSlots[i];
+    const hand = sorted[i];
+    if (!hand) {
+      slot.pos = null;
+      slot.lastT = null;
+      slot.intensity = 0;
+      continue;
+    }
+    const palmSmoothed = (i === 0 ? sm.palmL : sm.palmR).set(hand.palm);
+
+    if (slot.pos === null || slot.lastT === null) {
+      slot.pos = { x: hand.palm.x, y: hand.palm.y };
+      slot.lastT = now;
+      slot.vx = slot.vy = 0;
+    } else {
+      const dt = Math.min(Math.max((now - slot.lastT) / 1000, 1 / 240), 0.1);
+      slot.lastT = now;
+      const vx = (hand.palm.x - slot.pos.x) / dt / eyePx; // eye-widths/sec
+      const vy = (hand.palm.y - slot.pos.y) / dt / eyePx;
+      const speed = Math.hypot(vx, vy);
+
+      const reversed = slot.vx * vx + slot.vy * vy < 0; // direction flip
+      if (reversed && speed > MARACA_SHAKE_SPEED &&
+          now - slot.lastHit > MARACA_COOLDOWN_MS && active) {
+        slot.lastHit = now;
+        const vol = clamp01(speed / MARACA_FULL_SPEED) ** 0.8;
+        slot.intensity = Math.max(slot.intensity, vol);
+        engine.maraca?.hit(vol);
+      }
+
+      slot.intensity *= Math.exp(-dt * 7); // rattle settles
+      // lean into horizontal motion; hold still -> upright
+      slot.angle = Math.max(-0.55, Math.min(0.55, vx * 0.035)) *
+        Math.min(1, speed / MARACA_SHAKE_SPEED);
+      slot.vx = vx;
+      slot.vy = vy;
+      slot.pos = { x: hand.palm.x, y: hand.palm.y };
+      maxI = Math.max(maxI, slot.intensity);
+    }
+    out.push({ palm: palmSmoothed, intensity: slot.intensity, angle: slot.angle, lastHit: slot.lastHit });
+  }
+
+  app.maracaVolume = active ? maxI : 0;
+  return { visible: out.length > 0, hands: out };
+}
+
 /* ---------------- render ---------------- */
 
-function render(frame, tromboneState, accordionState, now) {
+function render(frame, tromboneState, accordionState, maracaState, now) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const t = now / 1000;
 
@@ -468,6 +548,18 @@ function render(frame, tromboneState, accordionState, now) {
       fx,
     });
   }
+  if (app.instrument === "maracas" && maracaState.visible) {
+    for (const m of maracaState.hands) {
+      drawMaraca(ctx, {
+        palm: m.palm,
+        angle: m.angle,
+        intensity: m.intensity,
+        hitAge: (now - m.lastHit) / 1000,
+        scale,
+        fx,
+      });
+    }
+  }
 
   if (app.debug) {
     if (app.mode === "camera") {
@@ -483,7 +575,7 @@ function render(frame, tromboneState, accordionState, now) {
     ctx.font = `${Math.max(13, canvas.width * 0.014)}px ui-monospace, monospace`;
     const lines = [
       `mode=${app.mode} fps=${app.fps.toFixed(0)} quality=${app.quality}${app.cpuFallback ? " (cpu)" : ""} hands=${app.handCount} face=${app.faceSeen}`,
-      `slide=${app.slide01.toFixed(2)} spread=${app.spread01.toFixed(2)} raw=${(app.spreadRaw || 0).toFixed(2)}`,
+      `slide=${app.slide01.toFixed(2)} spread=${app.spread01.toFixed(2)} shake=${app.maracaVolume.toFixed(2)} raw=${(app.spreadRaw || 0).toFixed(2)}`,
       `open=${(frame.face?.openness ?? 0).toFixed(2)} blowing=${app.blowing} vol=${app.volume.toFixed(2)} freq=${app.freq.toFixed(1)}Hz`,
     ];
     lines.forEach((l, i) => ctx.fillText(l, 14, canvas.height * 0.06 + i * canvas.width * 0.018));
@@ -512,7 +604,9 @@ function updateStatusAndHints(tromboneState, accordionState) {
     setStatus("Mouse mode", "ok");
     showHint(app.instrument === "trombone"
       ? "Move the pointer to work the slide — <em>hold click or Space to blow</em>"
-      : "Move the pointer: distance from center is the bellows — <em>pump it to play</em>");
+      : app.instrument === "accordion"
+        ? "Move the pointer: distance from center is the bellows — <em>pump it to play</em>"
+        : "<em>Shake</em> the pointer back and forth to rattle the maraca 🪇");
     return;
   }
 
@@ -534,7 +628,7 @@ function updateStatusAndHints(tromboneState, accordionState) {
       setStatus(`Playing 🎺${cpu}`, "ok");
       showHint("Pull the slide out for <em>lower</em> notes, in for higher");
     }
-  } else {
+  } else if (app.instrument === "accordion") {
     if (app.handCount < 2) {
       setStatus(`Tracking · need both hands${cpu}`, "warn");
       showHint("Show <em>both hands</em> — one on each end of the accordion");
@@ -544,6 +638,17 @@ function updateStatusAndHints(tromboneState, accordionState) {
     } else {
       setStatus(`Playing 🪗${cpu}`, "ok");
       showHint("Wider apart = <em>higher</em> notes — keep pumping to keep singing");
+    }
+  } else if (app.instrument === "maracas") {
+    if (app.handCount < 1) {
+      setStatus(`Searching for you…${cpu}`, "warn");
+      showHint("Hold up a <em>hand</em> — or two, one maraca each");
+    } else if (app.maracaVolume < 0.12) {
+      setStatus(`Tracking ✓${cpu}`, "ok");
+      showHint("<em>Shake</em> it! Quick back-and-forth shakes rattle the beads 🪇");
+    } else {
+      setStatus(`Shaking 🪇${cpu}`, "ok");
+      showHint("Shake <em>harder</em> for louder — both hands for double maracas");
     }
   }
 }
@@ -562,7 +667,8 @@ function frame(now) {
 
   const tromboneState = updateTrombone(lastFrameState);
   const accordionState = updateAccordion(lastFrameState, now);
-  render(lastFrameState, tromboneState, accordionState, now);
+  const maracaState = updateMaracas(lastFrameState, now);
+  render(lastFrameState, tromboneState, accordionState, maracaState, now);
 
   if (now - (frame._lastUI ?? 0) > 300) { // don't thrash the DOM every frame
     frame._lastUI = now;

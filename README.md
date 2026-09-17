@@ -1,4 +1,4 @@
-# 🎺🪗 Imaginary Instruments
+# 🎺🪗🪇 Imaginary Instruments
 
 Play invisible instruments with your body — right in the browser.
 
@@ -29,11 +29,21 @@ The accordion stretches between **both hands**.
 - The *speed* of your hands moving together/apart drives the **bellows** —
   you only hear sound while you're actually pumping, like the real thing.
 
+### 🪇 Air Maracas
+One maraca per hand — or grab just one.
+
+- Every **shake** (a fast direction reversal of your hand) fires a rattle:
+  a noise burst through a high bandpass, like beads slamming the gourd.
+- Shake harder for louder, denser rattles; hold still and they settle.
+  The maracas squash and throw beads with each hit.
+
+![Air maracas](docs/screenshot-maracas.png)
+
 ## Controls
 
 | Input | Action |
 | --- | --- |
-| `1` / `2` | switch instrument |
+| `1` / `2` / `3` | switch instrument (trombone / accordion / maracas) |
 | `D` | debug overlay (landmarks, slide/spread values) |
 | `M` | mouse mode (no camera needed) |
 | Mouse mode | move pointer = hand · hold click / `Space` = blow |
