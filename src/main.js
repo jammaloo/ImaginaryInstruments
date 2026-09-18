@@ -23,9 +23,10 @@ const TROMBONE_EXTENT = { min: 1.0, max: 4.2 };  // mouth↔hand distance in eye
 const ACCORDION_SPREAD = { min: 2.2, max: 7.5 }; // hand separation in eye-widths -> scale index
 const BELLOWS_SPEED = 5.0;                       // eye-widths/sec that maps to full volume
 const BLOW_ON = 0.16, BLOW_OFF = 0.09;           // jawOpen hysteresis
-const MARACA_SHAKE_SPEED = 6;                    // eye-widths/sec before a reversal counts as a shake
-const MARACA_FULL_SPEED = 26;                    // eye-widths/sec for full-volume rattle
-const MARACA_COOLDOWN_MS = 70;                   // min gap between hits, per hand
+const MARACA_SWING_SPEED = 4.5;                  // eye-widths/sec to enter a swing
+const MARACA_FIRE_SPEED = 1.5;                   // swing ends when speed drops below this
+const MARACA_FULL_SPEED = 18;                    // swing peak for full-volume rattle
+const MARACA_COOLDOWN_MS = 60;                   // min gap between hits, per hand
 const DRUM_ZONE_Y = 0.58;                        // pads live in the bottom fraction of the frame
 const DRUM_HIT_SPEED = 3.5;                      // downward eye-widths/sec to strike
 const DRUM_FULL_SPEED = 16;
@@ -149,7 +150,9 @@ const sm = {
 
 // maraca shake trackers, one per hand slot (sorted left/right)
 const maracaSlots = [0, 1].map(() => ({
-  pos: null, vx: 0, vy: 0, lastT: null, lastHit: -1e9, intensity: 0, angle: 0,
+  pos: null, vx: 0, vy: 0, lastT: null, lastHit: -1e9,
+  intensity: 0, angle: 0,
+  swinging: false, peak: 0,
 }));
 
 // drum strike trackers: one per hand (down-punch arming) + face (nod)
@@ -495,10 +498,11 @@ function updateAccordion(frame, now) {
 }
 
 /**
- * Maracas: one per hand. A "hit" fires when the hand's velocity vector
- * flips direction (the beads slam into the gourd, like a real shake);
- * speed sets the volume. Velocity is measured on raw positions — the
- * palm smoother would damp the very oscillation we're listening for.
+ * Maracas: one per hand. Like the real thing, the beads fly during the fast
+ * part of a swing and clack when the hand turns around — so a hit fires when
+ * a fast swing settles (speed rises over the swing threshold, then drops to
+ * near rest). Volume comes from the swing's peak speed. Velocity is measured
+ * on raw positions with light smoothing to reject landmark jitter.
  */
 function updateMaracas(frame, now) {
   const eyePx = frame.face?.eyePx || canvas.width * 0.075;
@@ -516,6 +520,8 @@ function updateMaracas(frame, now) {
       slot.pos = null;
       slot.lastT = null;
       slot.intensity = 0;
+      slot.swinging = false;
+      slot.peak = 0;
       continue;
     }
     const palmSmoothed = (i === 0 ? sm.palmL : sm.palmR).set(hand.palm);
@@ -527,25 +533,35 @@ function updateMaracas(frame, now) {
     } else {
       const dt = Math.min(Math.max((now - slot.lastT) / 1000, 1 / 240), 0.1);
       slot.lastT = now;
-      const vx = (hand.palm.x - slot.pos.x) / dt / eyePx; // eye-widths/sec
-      const vy = (hand.palm.y - slot.pos.y) / dt / eyePx;
-      const speed = Math.hypot(vx, vy);
+      const rawVx = (hand.palm.x - slot.pos.x) / dt / eyePx; // eye-widths/sec
+      const rawVy = (hand.palm.y - slot.pos.y) / dt / eyePx;
+      slot.vx = lerp(slot.vx, rawVx, 0.5); // light smoothing vs landmark jitter
+      slot.vy = lerp(slot.vy, rawVy, 0.5);
+      const speed = Math.hypot(slot.vx, slot.vy);
 
-      const reversed = slot.vx * vx + slot.vy * vy < 0; // direction flip
-      if (reversed && speed > MARACA_SHAKE_SPEED &&
-          now - slot.lastHit > MARACA_COOLDOWN_MS && active) {
-        slot.lastHit = now;
-        const vol = clamp01(speed / MARACA_FULL_SPEED) ** 0.8;
-        slot.intensity = Math.max(slot.intensity, vol);
-        engine.maraca?.hit(vol);
+      // swing state machine: fast -> (peak captured) -> settles = clack
+      if (!slot.swinging) {
+        if (speed > MARACA_SWING_SPEED) {
+          slot.swinging = true;
+          slot.peak = speed;
+        }
+      } else {
+        slot.peak = Math.max(slot.peak, speed);
+        if (speed < MARACA_FIRE_SPEED) {
+          slot.swinging = false;
+          if (active && now - slot.lastHit > MARACA_COOLDOWN_MS) {
+            slot.lastHit = now;
+            const vol = Math.max(0.35, clamp01(slot.peak / MARACA_FULL_SPEED) ** 0.8);
+            slot.intensity = Math.max(slot.intensity, vol);
+            engine.maraca?.hit(vol);
+          }
+        }
       }
 
       slot.intensity *= Math.exp(-dt * 7); // rattle settles
       // lean into horizontal motion; hold still -> upright
-      slot.angle = Math.max(-0.55, Math.min(0.55, vx * 0.035)) *
-        Math.min(1, speed / MARACA_SHAKE_SPEED);
-      slot.vx = vx;
-      slot.vy = vy;
+      slot.angle = Math.max(-0.55, Math.min(0.55, slot.vx * 0.035)) *
+        Math.min(1, speed / MARACA_SWING_SPEED);
       slot.pos = { x: hand.palm.x, y: hand.palm.y };
       maxI = Math.max(maxI, slot.intensity);
     }

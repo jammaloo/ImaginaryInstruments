@@ -32,8 +32,8 @@ The accordion stretches between **both hands**.
 ### 🪇 Air Maracas
 One maraca per hand — or grab just one.
 
-- Every **shake** (a fast direction reversal of your hand) fires a rattle:
-  a noise burst through a high bandpass, like beads slamming the gourd.
+- Like the real thing, the beads clack **when a fast shake settles** —
+  swing your hand quickly and the rattle lands as the swing turns around.
 - Shake harder for louder, denser rattles; hold still and they settle.
   The maracas squash and throw beads with each hit.
 
