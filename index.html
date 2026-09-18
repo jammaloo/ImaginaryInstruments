@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Imaginary Instruments — play the air</title>
   <meta name="description" content="Play an invisible trombone and accordion with your webcam. Face and hand tracking, Web Audio synthesis — everything runs locally in your browser.">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎺</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%2316203a'/><path d='M30 22v56M50 22v56M70 22v56' stroke='%23c084fc' stroke-width='9' stroke-linecap='round'/></svg>">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -18,28 +18,28 @@
 
       <nav class="switch" aria-label="Choose instrument">
         <button id="btnTrombone" class="switch-btn active" data-instrument="trombone">
-          <span class="ico">🎺</span> Trombone <kbd>1</kbd>
+          Trombone <kbd>1</kbd>
         </button>
         <button id="btnAccordion" class="switch-btn" data-instrument="accordion">
-          <span class="ico">🪗</span> Accordion <kbd>2</kbd>
+          Accordion <kbd>2</kbd>
         </button>
         <button id="btnMaracas" class="switch-btn" data-instrument="maracas">
-          <span class="ico">🪇</span> Maracas <kbd>3</kbd>
+          Maracas <kbd>3</kbd>
         </button>
         <button id="btnDrums" class="switch-btn" data-instrument="drums">
-          <span class="ico">🥁</span> Drums <kbd>4</kbd>
+          Drums <kbd>4</kbd>
         </button>
         <button id="btnHarp" class="switch-btn" data-instrument="harp">
-          <span class="ico">🎶</span> Harp <kbd>5</kbd>
+          Harp <kbd>5</kbd>
         </button>
         <button id="btnBass" class="switch-btn" data-instrument="bass">
-          <span class="ico">🎸</span> Bass <kbd>6</kbd>
+          Bass <kbd>6</kbd>
         </button>
       </nav>
 
       <div class="top-right">
         <div id="status" class="pill">Starting…</div>
-        <button id="muteBtn" class="icon-btn" title="Mute / unmute" aria-label="Mute or unmute">🔊</button>
+        <button id="muteBtn" class="icon-btn" title="Mute / unmute" aria-label="Mute or unmute">Mute</button>
       </div>
     </header>
 
@@ -48,52 +48,10 @@
 
     <section id="startPanel" class="panel">
       <h1>Play invisible instruments<br>with your own body</h1>
-      <p class="tagline">
-        Your webcam tracks your face and hands. No video ever leaves your device —
-        everything runs locally in your browser.
-      </p>
 
-      <div class="cards">
-        <article class="card" data-instrument="trombone">
-          <div class="card-art">🎺</div>
-          <h2>Air Trombone</h2>
-          <p>The trombone hangs off your mouth. Reach out a hand to grab the slide —
-             pull it in and out to change pitch, and <strong>open your mouth</strong> to blow.</p>
-        </article>
-        <article class="card" data-instrument="accordion">
-          <div class="card-art">🪗</div>
-          <h2>Air Accordion</h2>
-          <p>The accordion stretches between both hands. <strong>Pull your hands apart
-             and squeeze them together</strong> to pump the bellows and play.</p>
-        </article>
-        <article class="card" data-instrument="maracas">
-          <div class="card-art">🪇</div>
-          <h2>Air Maracas</h2>
-          <p>A maraca in each hand. <strong>Shake them</strong> — sharp back-and-forth
-             shakes rattle the beads, and harder shaking plays louder.</p>
-        </article>
-        <article class="card" data-instrument="drums">
-          <div class="card-art">🥁</div>
-          <h2>Air Drums</h2>
-          <p>A kit across the bottom of the frame. <strong>Punch down into a pad</strong>
-             to hit it — and <strong>nod your head</strong> for the kick drum.</p>
-        </article>
-        <article class="card" data-instrument="harp">
-          <div class="card-art">🎶</div>
-          <h2>Air Harp</h2>
-          <p>A harp hangs in the air below your face. <strong>Sweep your fingertips
-             across the glowing strings</strong> to pluck them — all ten fingers welcome.</p>
-        </article>
-        <article class="card" data-instrument="bass">
-          <div class="card-art">🎸</div>
-          <h2>Air Bass</h2>
-          <p>A bass hangs across your chest. <strong>Slide your hand along the neck</strong>
-             to choose the note, then <strong>flick down over the strings</strong> to pluck.</p>
-        </article>
-      </div>
-
-      <button id="startBtn" class="primary">🎤 &nbsp;Start camera &amp; play</button>
+      <button id="startBtn" class="primary">Start camera &amp; play</button>
       <button id="mouseBtn" class="ghost">No camera? Try mouse mode</button>
+      <p class="notice">Everything runs on your device – no video ever leaves it.</p>
       <p class="fineprint" id="modelStatus">Preloading tracking models (~15&nbsp;MB)…</p>
     </section>
   </div>

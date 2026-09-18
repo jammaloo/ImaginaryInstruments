@@ -1,4 +1,4 @@
-# 🎸🎺🪗🥁🪇 Imaginary Instruments
+# Imaginary Instruments
 
 Play invisible instruments with your body — right in the browser.
 
@@ -12,24 +12,24 @@ live with the Web Audio API (no samples, no uploads, no server).
 
 ![Air trombone](docs/screenshot-trombone.png)
 
-### 🎺 Air Trombone
+### Air Trombone
 The trombone hangs off your **mouth** and one **hand**.
 
 - The mouth↔hand distance is the **slide position** — pull your hand away to
-  go lower (B♭2 down to E♭2, continuous glide, just like a real slide).
+  go lower (B2 down to E2, continuous glide, just like a real slide).
 - **Open your mouth to blow.** Wider open = louder. Close your lips and the
   sound stops.
 
 ![Air accordion](docs/screenshot-accordion.png)
 
-### 🪗 Air Accordion
+### Air Accordion
 The accordion stretches between **both hands**.
 
 - Hand separation picks the note (C-major pentatonic, C3–C5).
 - The *speed* of your hands moving together/apart drives the **bellows** —
   you only hear sound while you're actually pumping, like the real thing.
 
-### 🪇 Air Maracas
+### Air Maracas
 One maraca per hand — or grab just one.
 
 - Like the real thing, the beads clack **when a fast shake settles** —
@@ -39,7 +39,7 @@ One maraca per hand — or grab just one.
 
 ![Air maracas](docs/screenshot-maracas.png)
 
-### 🥁 Air Drums
+### Air Drums
 A five-piece kit across the bottom of the frame.
 
 - **Punch down into a pad** to strike it — kick, hi-hat, snare, tom, floor.
@@ -47,7 +47,7 @@ A five-piece kit across the bottom of the frame.
 - A sharp **nod of your head** plays the kick drum (face tracking).
 - Mouse mode: sweep the pointer down into a pad; hold click for the kick.
 
-### 🎶 Air Harp
+### Air Harp
 A harp hangs in the air below your face — both hands stay free.
 
 - **All ten fingertips are plectra**: sweep a fingertip *across* a glowing
@@ -55,7 +55,7 @@ A harp hangs in the air below your face — both hands stay free.
 - Real Karplus-Strong string synthesis (rendered per pitch and cached),
   so plucks genuinely ring and decay like strings.
 
-### 🎸 Air Bass
+### Air Bass
 A bass hangs across your chest, worn like the real thing.
 
 - The neck spans the screen: **slide your left hand along it to fret** —
@@ -73,7 +73,7 @@ A bass hangs across your chest, worn like the real thing.
 | `D` | debug overlay (landmarks, slide/spread values) |
 | `M` | mouse mode (no camera needed) |
 | Mouse mode | move pointer = hand · hold click / `Space` = blow |
-| 🔊 button | mute |
+| Mute button | mute |
 
 ## Try it
 
