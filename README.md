@@ -1,4 +1,4 @@
-# 🎺🪗🥁🪇 Imaginary Instruments
+# 🎸🎺🪗🥁🪇 Imaginary Instruments
 
 Play invisible instruments with your body — right in the browser.
 
@@ -55,11 +55,21 @@ A harp hangs in the air below your face — both hands stay free.
 - Real Karplus-Strong string synthesis (rendered per pitch and cached),
   so plucks genuinely ring and decay like strings.
 
+### 🎸 Air Bass
+A bass hangs across your chest, worn like the real thing.
+
+- The neck spans the screen: **slide your left hand along it to fret** —
+  toward the bridge = shorter string = higher note (C-major pentatonic,
+  C2–C3).
+- **Flick your right hand down over the strings** to pluck; flick speed
+  sets the punch. One hand alone can fret and pluck both.
+- Karplus-Strong with long sustain and an octave blend for small speakers.
+
 ## Controls
 
 | Input | Action |
 | --- | --- |
-| `1`–`5` | switch instrument (trombone / accordion / maracas / drums / harp) |
+| `1`–`6` | switch instrument (trombone / accordion / maracas / drums / harp / bass) |
 | `D` | debug overlay (landmarks, slide/spread values) |
 | `M` | mouse mode (no camera needed) |
 | Mouse mode | move pointer = hand · hold click / `Space` = blow |

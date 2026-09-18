@@ -71,6 +71,7 @@ export class AudioEngine {
     this.maraca = new MaracaVoice(ctx, master);
     this.drums = new DrumKitVoice(ctx, master);
     this.harp = new HarpVoice(ctx, master);
+    this.bass = new BassVoice(ctx, master);
   }
 
   setMuted(muted) {
@@ -99,6 +100,13 @@ export class AudioEngine {
     const semis = [0, 2, 4, 7, 9];
     const octave = Math.floor(index / 5);
     const midi = 60 + octave * 12 + semis[index % 5]; // 60 = C4
+    return 440 * 2 ** ((midi - 69) / 12);
+  }
+
+  /** Bass fret index -> frequency: C-major pentatonic, C2 up to C3. */
+  static bassFreq(index) {
+    const semis = [0, 2, 4, 7, 9, 12];
+    const midi = 36 + semis[Math.min(semis.length - 1, Math.max(0, index))]; // 36 = C2
     return 440 * 2 ** ((midi - 69) / 12);
   }
 }
@@ -436,6 +444,59 @@ class HarpVoice {
     src.playbackRate.value = 0.995 + Math.random() * 0.01; // natural variance
     const g = this.ctx.createGain();
     g.gain.value = 0.85 * vol;
+    src.connect(g).connect(this.dest);
+    src.start();
+    this.pluckCount++;
+  }
+
+  silence() {}
+}
+
+/**
+ * Bass: Karplus-Strong like the harp but pitched down (C2–C3), with an
+ * octave-up KS blended in at low level so small speakers still show the
+ * fundamental's neighbors.
+ */
+class BassVoice {
+  constructor(ctx, dest) {
+    this.ctx = ctx;
+    this.dest = dest;
+    this.cache = new Map(); // freq -> AudioBuffer
+    this.pluckCount = 0;
+  }
+
+  ksBuffer(freq) {
+    let buf = this.cache.get(freq);
+    if (buf) return buf;
+    const sr = this.ctx.sampleRate;
+    buf = this.ctx.createBuffer(1, Math.floor(sr * 2.8), sr);
+    const out = buf.getChannelData(0);
+    // two interleaved delay-line plucks: fundamental + quiet octave up
+    const gen = (f, decay) => {
+      const N = Math.max(2, Math.round(sr / f));
+      const line = new Float32Array(N);
+      for (let i = 0; i < N; i++) line[i] = Math.random() * 2 - 1;
+      let j = 0;
+      return () => {
+        const cur = line[j];
+        line[j] = (cur + line[(j + 1) % N]) * 0.5 * decay;
+        j = (j + 1) % N;
+        return cur;
+      };
+    };
+    const fundamental = gen(freq, 0.997);   // long sustain, it's a bass
+    const octaveUp = gen(freq * 2, 0.996);
+    for (let i = 0; i < out.length; i++) out[i] = fundamental() + 0.3 * octaveUp();
+    this.cache.set(freq, buf);
+    return buf;
+  }
+
+  pluck(freq, vol = 1) {
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.ksBuffer(freq);
+    src.playbackRate.value = 0.995 + Math.random() * 0.01;
+    const g = this.ctx.createGain();
+    g.gain.value = 0.95 * vol;
     src.connect(g).connect(this.dest);
     src.start();
     this.pluckCount++;

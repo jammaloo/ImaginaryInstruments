@@ -574,3 +574,125 @@ export function drawHarp(ctx, { cx, topY, width, height, strings, now, fx = true
   }
   ctx.restore();
 }
+
+/* ------------------------------------------------------------------ */
+/* Bass — neck across the chest, frets under the left hand             */
+/* ------------------------------------------------------------------ */
+
+export function drawBass(ctx, { x0, x1, y, fretSlot, slots, string, now, fx = true }) {
+  const s = Math.max(18, (x1 - x0) / 8);
+  const neckH = s * 0.44;
+  const age = (now - string.pluckT) / 1000;
+  const amp = string.amp * Math.exp(-Math.max(age, 0) * 3);
+
+  ctx.save();
+  setShadow(ctx, fx, "rgba(0,0,0,0.5)", s * 0.35, s * 0.12);
+
+  // --- body (right end): two offset lobes like a double-cutaway bass ---
+  const bodyX = x1 + s * 0.55;
+  const bg = ctx.createRadialGradient(bodyX, y - s * 0.2, s * 0.1, bodyX, y, s * 1.5);
+  bg.addColorStop(0, "#e08030");
+  bg.addColorStop(0.6, "#8a4218");
+  bg.addColorStop(1, "#4a2008");
+  ctx.fillStyle = bg;
+  ctx.beginPath();
+  ctx.ellipse(bodyX, y + s * 0.35, s * 1.05, s * 1.15, 0, 0, Math.PI * 2);
+  ctx.ellipse(bodyX - s * 0.25, y - s * 0.55, s * 0.7, s * 0.62, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // pickguard (kept below the neck joint so it doesn't swallow the strings)
+  ctx.fillStyle = "#1c1410";
+  ctx.beginPath();
+  ctx.ellipse(bodyX - s * 0.1, y + s * 0.35, s * 0.6, s * 0.62, 0.3, 0, Math.PI * 2);
+  ctx.fill();
+  // pickups
+  ctx.fillStyle = "#0d0d10";
+  for (const py of [y - s * 0.12, y + s * 0.22]) {
+    roundRectPath(ctx, bodyX - s * 0.42, py, s * 0.62, s * 0.14, s * 0.05);
+    ctx.fill();
+  }
+
+  // --- neck (left of the body) ---
+  const ng = ctx.createLinearGradient(0, y - neckH / 2, 0, y + neckH / 2);
+  ng.addColorStop(0, "#a06a35");
+  ng.addColorStop(0.5, "#d9a96b");
+  ng.addColorStop(1, "#8a5a2b");
+  ctx.fillStyle = ng;
+  roundRectPath(ctx, x0 - s * 0.3, y - neckH / 2, (x1 - x0) + s * 1.1, neckH, s * 0.06);
+  ctx.fill();
+
+  // headstock + tuning pegs
+  ctx.fillStyle = "#4a2c12";
+  roundRectPath(ctx, x0 - s * 0.62, y - neckH * 0.62, s * 0.36, neckH * 1.24, s * 0.05);
+  ctx.fill();
+  ctx.fillStyle = "#d8d8dc";
+  for (const py of [-0.28, -0.1, 0.1, 0.28]) {
+    ctx.beginPath();
+    ctx.arc(x0 - s * 0.44, y + neckH * py, s * 0.045, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // nut + frets
+  ctx.fillStyle = "#efe8d8";
+  ctx.fillRect(x0 - s * 0.02, y - neckH / 2, s * 0.045, neckH);
+  ctx.strokeStyle = "rgba(210,210,215,0.75)";
+  ctx.lineWidth = s * 0.022;
+  const slotW = (x1 - x0) / slots;
+  ctx.beginPath();
+  for (let i = 1; i < slots; i++) {
+    const fx2 = x0 + i * slotW;
+    ctx.moveTo(fx2, y - neckH / 2);
+    ctx.lineTo(fx2, y + neckH / 2);
+  }
+  ctx.stroke();
+  // inlay dots
+  ctx.fillStyle = "rgba(240,235,220,0.65)";
+  for (let i = 1; i < slots; i += 2) {
+    ctx.beginPath();
+    ctx.arc(x0 + (i - 0.5) * slotW, y, s * 0.035, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  setShadow(ctx, false);
+
+  // --- strings (over neck and body), wobbling after a pluck ---
+  const bridgeX = x1 + s * 0.42;
+  ctx.strokeStyle = "rgba(245, 242, 230, 0.95)";
+  for (let si = -1; si <= 1; si++) {
+    const oy = si * s * 0.055;
+    ctx.lineWidth = si === 0 ? s * 0.02 : s * 0.014;
+    ctx.beginPath();
+    const segs = 14;
+    for (let k = 0; k <= segs; k++) {
+      const px = x0 + ((bridgeX - x0) * k) / segs;
+      const env = Math.sin((k / segs) * Math.PI);
+      const wob = amp * s * 0.12 * env * Math.sin(age * 55 + string.phase + si * 1.3);
+      const py = y + oy + (si === 0 ? wob : 0);
+      if (k === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+
+  // --- fretting finger: glowing band on the fretted slot ---
+  const fretX = x0 + (fretSlot + 0.5) * slotW;
+  ctx.strokeStyle = "rgba(34, 211, 238, 0.95)";
+  ctx.lineWidth = s * 0.05;
+  if (fx) {
+    ctx.shadowColor = "rgba(34, 211, 238, 0.9)";
+    ctx.shadowBlur = s * 0.25;
+  }
+  roundRectPath(ctx, fretX - s * 0.09, y - neckH * 0.52, s * 0.18, neckH * 1.04, s * 0.06);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // pluck spark: expanding ring where the string was snapped
+  if (age >= 0 && age < 0.3 && string.pluckX !== undefined) {
+    const f2 = 1 - age / 0.3;
+    ctx.strokeStyle = `rgba(255, 235, 200, ${0.75 * f2})`;
+    ctx.lineWidth = s * 0.04 * f2 + s * 0.008;
+    ctx.beginPath();
+    ctx.ellipse(string.pluckX, y, s * (0.2 + (1 - f2) * 0.55), s * (0.12 + (1 - f2) * 0.3), 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}

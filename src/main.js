@@ -16,7 +16,7 @@
 
 import { AudioEngine } from "./audio.js";
 import { Tracker } from "./tracking.js";
-import { drawTrombone, drawAccordion, drawMaraca, drawDrums, drawHarp, drawHandSkeleton } from "./draw.js";
+import { drawTrombone, drawAccordion, drawMaraca, drawDrums, drawHarp, drawBass, drawHandSkeleton } from "./draw.js";
 
 /* ---------------- tuning ---------------- */
 const TROMBONE_EXTENT = { min: 1.0, max: 4.2 };  // mouth↔hand distance in eye-widths -> slide 0..1
@@ -38,6 +38,13 @@ const HARP_HEIGHT_EYE = 5.4;                     // string length in eye-widths
 const PLUCK_SPEED = 1.5;                         // fingertip speed (eye-widths/s) to pluck
 const PLUCK_FULL_SPEED = 9;
 const TIP_IDS = [4, 8, 12, 16, 20];              // MediaPipe fingertip landmarks
+const BASS_SLOTS = 6;                            // frets: C2 D2 E2 G2 A2 C3
+const BASS_LEN_EYE = 5.2;                        // neck length in eye-widths
+const BASS_NECK_Y_EYE = 1.5;                     // neck sits this far below the mouth
+const BASS_PLUCK_SPEED = 3.2;                    // downward flick (eye-widths/s) to pluck
+const BASS_FULL_SPEED = 14;
+const BASS_REARM_SPEED = 1.2;
+const BASS_COOLDOWN_MS = 90;
 const MOUSE_MOUTH = { x: 0.5, y: 0.28 };
 const MOUSE_EYE_DIST = 0.075;                    // virtual eye width (fraction of canvas width)
 
@@ -103,6 +110,7 @@ const app = {
   volume: 0,
   maracaVolume: 0,
   lastDrumHit: -1e9,
+  lastBassPluck: -1e9,
   freq: 0,
   faceSeen: false,
   handCount: 0,
@@ -158,6 +166,11 @@ const harpStrings = Array.from({ length: HARP_STRINGS }, () => ({
   amp: 0, phase: 0, pluckT: -1e9,
 }));
 let harpLastT = null;
+
+// bass: pluck-hand arming (index = sorted hand slot) + string ripple
+const bassSlots = [0, 1].map(() => ({ pos: null, lastT: null, armed: true }));
+const bassString = { amp: 0, phase: 0, pluckT: -1e9, pluckX: 0 };
+let appBassDecayT = null;
 
 /* ---------------- debug hooks (also handy for automated testing) ---------------- */
 window.__II_DEBUG = {
@@ -283,6 +296,8 @@ function setInstrument(name) {
   drumFace.y = null; drumFace.lastT = null;
   harpTips.clear();
   for (const s of harpStrings) { s.amp = 0; s.pluckT = -1e9; }
+  for (const slot of bassSlots) { slot.pos = null; slot.lastT = null; slot.armed = true; }
+  bassString.amp = 0; bassString.pluckT = -1e9;
 }
 
 $("startBtn").addEventListener("click", startCamera);
@@ -317,6 +332,7 @@ window.addEventListener("keydown", (e) => {
   else if (e.key === "3") setInstrument("maracas");
   else if (e.key === "4") setInstrument("drums");
   else if (e.key === "5") setInstrument("harp");
+  else if (e.key === "6") setInstrument("bass");
   else if (e.key.toLowerCase() === "d") app.debug = !app.debug;
   else if (e.key.toLowerCase() === "m" && app.mode !== "mouse") startMouseMode();
   else if (e.code === "Space" && app.mode === "mouse") {
@@ -681,9 +697,74 @@ function updateHarp(frame, now) {
   return { visible: true, cx, topY, width, height, xs };
 }
 
+/**
+ * Bass: the neck hangs across the chest. The leftmost hand frets (its x
+ * picks the slot; toward the bridge = higher note, like a real string),
+ * the rightmost hand plucks with a quick downward flick over the neck.
+ * One hand does both.
+ */
+function updateBass(frame, now) {
+  const active = app.instrument === "bass";
+  const eyePx = frame.face?.eyePx || canvas.width * 0.075;
+  const mouth = frame.face?.mouth || { x: canvas.width / 2, y: canvas.height * 0.3 };
+  const L = eyePx * BASS_LEN_EYE;
+  const y = mouth.y + eyePx * BASS_NECK_Y_EYE;
+  const x0 = mouth.x - L * 0.62;
+  const x1 = x0 + L;
+  const slotW = L / BASS_SLOTS;
+
+  // string ripple decay
+  if (appBassDecayT !== null) bassString.amp *= Math.exp(-((now - appBassDecayT) / 1000) * 3);
+  appBassDecayT = now;
+
+  const sorted = frame.hands.length >= 2
+    ? [...frame.hands].sort((a, b) => a.palm.x - b.palm.x)
+    : frame.hands;
+  const fretter = sorted[0];
+  const plucker = sorted[sorted.length - 1];
+
+  let fretSlot = 0;
+  if (fretter) {
+    fretSlot = Math.min(BASS_SLOTS - 1, Math.max(0, Math.floor((fretter.palm.x - x0) / slotW)));
+  }
+
+  if (plucker) {
+    const slot = plucker === fretter ? bassSlots[0] : bassSlots[1];
+    if (!slot.pos || !slot.lastT) {
+      slot.pos = { x: plucker.palm.x, y: plucker.palm.y };
+      slot.lastT = now;
+    } else {
+      const dt = Math.min(Math.max((now - slot.lastT) / 1000, 1 / 240), 0.1);
+      const vy = (plucker.palm.y - slot.pos.y) / dt / eyePx;
+      slot.pos = { x: plucker.palm.x, y: plucker.palm.y };
+      slot.lastT = now;
+
+      const overNeck = plucker.palm.x > x0 - slotW * 0.2 && plucker.palm.x < x1 + slotW * 0.5;
+      if (slot.armed && active && vy > BASS_PLUCK_SPEED && overNeck &&
+          now - bassString.pluckT > BASS_COOLDOWN_MS) {
+        slot.armed = false;
+        const vol = Math.max(0.35, clamp01(vy / BASS_FULL_SPEED) ** 0.85);
+        const freq = AudioEngine.bassFreq(fretSlot);
+        bassString.amp = Math.max(bassString.amp, vol);
+        bassString.phase = Math.random() * Math.PI * 2;
+        bassString.pluckT = now;
+        bassString.pluckX = Math.min(plucker.palm.x, bridgeX());
+        app.lastBassPluck = now;
+        app.freq = freq;
+        engine.bass?.pluck(freq, vol);
+      } else if (vy < BASS_REARM_SPEED) {
+        slot.armed = true;
+      }
+    }
+  }
+
+  function bridgeX() { return x1 + eyePx * 2.3 * 0.42; }
+  return { visible: true, x0, x1, y, fretSlot, slots: BASS_SLOTS };
+}
+
 /* ---------------- render ---------------- */
 
-function render(frame, tromboneState, accordionState, maracaState, drumState, harpState, now) {
+function render(frame, tromboneState, accordionState, maracaState, drumState, harpState, bassState, now) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const t = now / 1000;
 
@@ -758,6 +839,18 @@ function render(frame, tromboneState, accordionState, maracaState, drumState, ha
       fx,
     });
   }
+  if (app.instrument === "bass") {
+    drawBass(ctx, {
+      x0: bassState.x0,
+      x1: bassState.x1,
+      y: bassState.y,
+      fretSlot: bassState.fretSlot,
+      slots: bassState.slots,
+      string: bassString,
+      now,
+      fx,
+    });
+  }
 
   if (app.debug) {
     if (app.mode === "camera") {
@@ -773,7 +866,7 @@ function render(frame, tromboneState, accordionState, maracaState, drumState, ha
     ctx.font = `${Math.max(13, canvas.width * 0.014)}px ui-monospace, monospace`;
     const lines = [
       `mode=${app.mode} fps=${app.fps.toFixed(0)} quality=${app.quality}${app.cpuFallback ? " (cpu)" : ""} hands=${app.handCount} face=${app.faceSeen}`,
-      `slide=${app.slide01.toFixed(2)} spread=${app.spread01.toFixed(2)} shake=${app.maracaVolume.toFixed(2)} drums=${engine.drums?.hitCount ?? 0} plucks=${engine.harp?.pluckCount ?? 0}`,
+      `slide=${app.slide01.toFixed(2)} spread=${app.spread01.toFixed(2)} shake=${app.maracaVolume.toFixed(2)} drums=${engine.drums?.hitCount ?? 0} plucks=${engine.harp?.pluckCount ?? 0} bass=${engine.bass?.pluckCount ?? 0}`,
       `open=${(frame.face?.openness ?? 0).toFixed(2)} blowing=${app.blowing} vol=${app.volume.toFixed(2)} freq=${app.freq.toFixed(1)}Hz`,
     ];
     lines.forEach((l, i) => ctx.fillText(l, 14, canvas.height * 0.06 + i * canvas.width * 0.018));
@@ -806,6 +899,7 @@ function updateStatusAndHints(tromboneState, accordionState) {
       maracas: "<em>Shake</em> the pointer back and forth to rattle the maraca 🪇",
       drums: "Sweep the pointer <em>down</em> into a pad to hit it — <em>hold click for the kick</em> 🥁",
       harp: "Sweep the pointer <em>across</em> the strings to pluck them 🎶",
+      bass: "Slide to choose the note — flick the pointer <em>down</em> to pluck 🎸",
     }[app.instrument]);
     return;
   }
@@ -872,6 +966,19 @@ function updateStatusAndHints(tromboneState, accordionState) {
       setStatus(`Plucking 🎶${cpu}`, "ok");
       showHint("Sweep <em>faster</em> for louder plucks — both hands, all ten fingers");
     }
+  } else if (app.instrument === "bass") {
+    if (app.handCount < 1) {
+      setStatus(`Searching for you…${cpu}`, "warn");
+      showHint("Show your <em>face</em> — the bass hangs across your chest 🎸");
+    } else if (now() - app.lastBassPluck > 1500) {
+      setStatus(`Tracking ✓${cpu}`, "ok");
+      showHint(app.handCount < 2
+        ? "Slide along the <em>neck</em> to choose a note — flick <em>down</em> to pluck"
+        : "Left hand works the <em>frets</em> — flick your right hand <em>down</em> over the strings");
+    } else {
+      setStatus(`Plucking 🎸${cpu}`, "ok");
+      showHint("Slide <em>right</em> for higher notes — flick harder for more punch");
+    }
   }
 }
 
@@ -897,7 +1004,8 @@ function frame(now) {
   const maracaState = updateMaracas(lastFrameState, now);
   const drumState = updateDrums(lastFrameState, now);
   const harpState = updateHarp(lastFrameState, now);
-  render(lastFrameState, tromboneState, accordionState, maracaState, drumState, harpState, now);
+  const bassState = updateBass(lastFrameState, now);
+  render(lastFrameState, tromboneState, accordionState, maracaState, drumState, harpState, bassState, now);
 
   if (now - (frame._lastUI ?? 0) > 300) { // don't thrash the DOM every frame
     frame._lastUI = now;
