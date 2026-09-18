@@ -97,7 +97,7 @@ const fpsEl = $("fps");
 /* ---------------- state ---------------- */
 const app = {
   mode: "idle", // idle | camera | mouse
-  instrument: "trombone",
+  instrument: "harp", // harp-only build
   running: false,
   loopStarted: false,
   cpuFallback: false,
@@ -330,13 +330,7 @@ window.addEventListener("pointerup", () => (pointer.down = false));
 
 window.addEventListener("keydown", (e) => {
   if (e.repeat) return;
-  if (e.key === "1") setInstrument("trombone");
-  else if (e.key === "2") setInstrument("accordion");
-  else if (e.key === "3") setInstrument("maracas");
-  else if (e.key === "4") setInstrument("drums");
-  else if (e.key === "5") setInstrument("harp");
-  else if (e.key === "6") setInstrument("bass");
-  else if (e.key.toLowerCase() === "d") app.debug = !app.debug;
+  if (e.key.toLowerCase() === "d") app.debug = !app.debug;
   else if (e.key.toLowerCase() === "m" && app.mode !== "mouse") startMouseMode();
   else if (e.code === "Space" && app.mode === "mouse") {
     e.preventDefault();

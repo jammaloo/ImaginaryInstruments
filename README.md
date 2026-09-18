@@ -1,78 +1,31 @@
-# 🎸🎺🪗🥁🪇 Imaginary Instruments
+# 🎶 Air Harp
 
-Play invisible instruments with your body — right in the browser.
+A harp-only edition of [Imaginary Instruments](https://github.com/jammaloo/ImaginaryInstruments)
+(this branch, `harp-only`, carries just the one instrument; `main` has the
+trombone, accordion, maracas, drums, harp and bass).
 
-Your webcam tracks your face and hands; an instrument is drawn over the live
-video and you play it for real: slide positions, bellows pumps, pitch and
-volume all come from how you move. **No video ever leaves your device** — the
-tracking models run locally via WebAssembly, and all sound is synthesized
-live with the Web Audio API (no samples, no uploads, no server).
+Play an invisible harp with your own hands. The harp hangs below your chin;
+your webcam tracks all ten fingertips, and sweeping any fingertip across a
+glowing string plucks it — with real Karplus-Strong string synthesis,
+rendered locally in your browser. No video ever leaves your device.
 
-## The instruments
-
-![Air trombone](docs/screenshot-trombone.png)
-
-### 🎺 Air Trombone
-The trombone hangs off your **mouth** and one **hand**.
-
-- The mouth↔hand distance is the **slide position** — pull your hand away to
-  go lower (B♭2 down to E♭2, continuous glide, just like a real slide).
-- **Open your mouth to blow.** Wider open = louder. Close your lips and the
-  sound stops.
-
-![Air accordion](docs/screenshot-accordion.png)
-
-### 🪗 Air Accordion
-The accordion stretches between **both hands**.
-
-- Hand separation picks the note (C-major pentatonic, C3–C5).
-- The *speed* of your hands moving together/apart drives the **bellows** —
-  you only hear sound while you're actually pumping, like the real thing.
-
-### 🪇 Air Maracas
-One maraca per hand — or grab just one.
-
-- Like the real thing, the beads clack **when a fast shake settles** —
-  swing your hand quickly and the rattle lands as the swing turns around.
-- Shake harder for louder, denser rattles; hold still and they settle.
-  The maracas squash and throw beads with each hit.
-
-![Air maracas](docs/screenshot-maracas.png)
-
-### 🥁 Air Drums
-A five-piece kit across the bottom of the frame.
-
-- **Punch down into a pad** to strike it — kick, hi-hat, snare, tom, floor.
-  Punch speed sets the velocity, like real sticking.
-- A sharp **nod of your head** plays the kick drum (face tracking).
-- Mouse mode: sweep the pointer down into a pad; hold click for the kick.
-
-### 🎶 Air Harp
-A harp hangs in the air below your face — both hands stay free.
-
-- **All ten fingertips are plectra**: sweep a fingertip *across* a glowing
-  string to pluck it. Sweep speed sets the volume.
+- **Both hands are plectra**: sweep a fingertip *across* a string to pluck
+  it. Sweep speed sets the volume; you must actually touch the strings.
 - Real Karplus-Strong string synthesis (rendered per pitch and cached),
   so plucks genuinely ring and decay like strings.
+- Mouse mode (`M`): sweep the pointer across the strings.
+- `D` toggles a debug overlay; the 🔊 button mutes.
 
-### 🎸 Air Bass
-A bass hangs across your chest, worn like the real thing.
-
-- The neck spans the screen: **slide your left hand along it to fret** —
-  toward the bridge = shorter string = higher note (C-major pentatonic,
-  C2–C3).
-- **Flick your right hand down over the strings** to pluck; flick speed
-  sets the punch. One hand alone can fret and pluck both.
-- Karplus-Strong with long sustain and an octave blend for small speakers.
+The harp plays C-major pentatonic (C4–A5), so sweeping wildly always
+sounds musical.
 
 ## Controls
 
 | Input | Action |
 | --- | --- |
-| `1`–`6` | switch instrument (trombone / accordion / maracas / drums / harp / bass) |
-| `D` | debug overlay (landmarks, slide/spread values) |
+| `D` | debug overlay (landmarks, string state) |
 | `M` | mouse mode (no camera needed) |
-| Mouse mode | move pointer = hand · hold click / `Space` = blow |
+| Mouse mode | sweep the pointer across the strings to pluck |
 | 🔊 button | mute |
 
 ## Try it

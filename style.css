@@ -128,7 +128,7 @@ html, body {
 }
 .switch-btn.active kbd { color: inherit; }
 
-.top-right { display: flex; align-items: center; gap: 10px; }
+.top-right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 
 .pill {
   font-size: 12px;
