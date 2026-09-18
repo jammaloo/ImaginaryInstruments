@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Air Harp — Imaginary Instruments</title>
   <meta name="description" content="Play an invisible harp with your webcam. Hand tracking catches your fingertips and Karplus-Strong synthesis rings the strings — everything runs locally in your browser.">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎺</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%2316203a'/><path d='M30 22v56M50 22v56M70 22v56' stroke='%23c084fc' stroke-width='9' stroke-linecap='round'/></svg>">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -18,7 +18,7 @@
 
       <div class="top-right">
         <div id="status" class="pill">Starting…</div>
-        <button id="muteBtn" class="icon-btn" title="Mute / unmute" aria-label="Mute or unmute">🔊</button>
+        <button id="muteBtn" class="icon-btn" title="Mute / unmute" aria-label="Mute or unmute">Mute</button>
       </div>
     </header>
 
@@ -27,23 +27,8 @@
 
     <section id="startPanel" class="panel">
       <h1>Play an invisible harp<br>with your own hands</h1>
-      <p class="tagline">
-        Your webcam tracks your fingertips. Sweep them across the glowing strings
-        to pluck — no video ever leaves your device, everything runs locally in
-        your browser.
-      </p>
 
-      <div class="cards">
-        <article class="card" data-instrument="harp">
-          <div class="card-art">🎶</div>
-          <h2>Air Harp</h2>
-          <p>A harp hangs in the air below your chin. <strong>Sweep your fingertips
-             across the glowing strings</strong> to pluck them — all ten fingers
-             welcome, sweep speed sets the volume.</p>
-        </article>
-      </div>
-
-      <button id="startBtn" class="primary">🎤 &nbsp;Start camera &amp; play</button>
+      <button id="startBtn" class="primary">Start camera &amp; play</button>
       <button id="mouseBtn" class="ghost">No camera? Try mouse mode</button>
       <p class="fineprint" id="modelStatus">Preloading tracking models (~15&nbsp;MB)…</p>
     </section>

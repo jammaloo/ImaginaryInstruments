@@ -307,7 +307,7 @@ $("startBtn").addEventListener("click", startCamera);
 $("mouseBtn").addEventListener("click", startMouseMode);
 $("muteBtn").addEventListener("click", () => {
   engine.setMuted(!engine.muted);
-  $("muteBtn").textContent = engine.muted ? "🔇" : "🔊";
+  $("muteBtn").textContent = engine.muted ? "Muted" : "Mute";
 });
 for (const btn of document.querySelectorAll(".switch-btn, .card")) {
   btn.addEventListener("click", () => setInstrument(btn.dataset.instrument));
@@ -359,7 +359,7 @@ tracker.init((msg) => {
   const el = document.getElementById("modelStatus");
   if (!el) return;
   el.textContent = msg === "Ready"
-    ? "Models ready — the camera will start instantly ✓"
+    ? "Models ready — the camera will start instantly"
     : `${msg} Feel free to keep reading, we'll be ready`;
 }).catch(() => {
   const el = document.getElementById("modelStatus");
@@ -906,10 +906,10 @@ function updateStatusAndHints(tromboneState, accordionState) {
     showHint({
       trombone: "Move the pointer to work the slide — <em>hold click or Space to blow</em>",
       accordion: "Move the pointer: distance from center is the bellows — <em>pump it to play</em>",
-      maracas: "<em>Shake</em> the pointer back and forth to rattle the maraca 🪇",
-      drums: "Sweep the pointer <em>down</em> into a pad to hit it — <em>hold click for the kick</em> 🥁",
-      harp: "Sweep the pointer <em>across</em> the strings to pluck them 🎶",
-      bass: "Slide to choose the note — flick the pointer <em>down</em> to pluck 🎸",
+      maracas: "<em>Shake</em> the pointer back and forth to rattle the maraca",
+      drums: "Sweep the pointer <em>down</em> into a pad to hit it — <em>hold click for the kick</em>",
+      harp: "Sweep the pointer <em>across</em> the strings to pluck them",
+      bass: "Slide to choose the note — flick the pointer <em>down</em> to pluck",
     }[app.instrument]);
     return;
   }
@@ -926,10 +926,10 @@ function updateStatusAndHints(tromboneState, accordionState) {
       setStatus(`Tracking · need a hand${cpu}`, "warn");
       showHint("Reach out <em>one hand</em> to grab the trombone slide");
     } else if (!app.blowing) {
-      setStatus(`Tracking ✓${cpu}`, "ok");
-      showHint("Open your <em>mouth</em> to blow — pull your hand to slide 🎺");
+      setStatus(`Tracking${cpu}`, "ok");
+      showHint("Open your <em>mouth</em> to blow — pull your hand to slide");
     } else {
-      setStatus(`Playing 🎺${cpu}`, "ok");
+      setStatus(`Playing${cpu}`, "ok");
       showHint("Pull the slide out for <em>lower</em> notes, in for higher");
     }
   } else if (app.instrument === "accordion") {
@@ -937,10 +937,10 @@ function updateStatusAndHints(tromboneState, accordionState) {
       setStatus(`Tracking · need both hands${cpu}`, "warn");
       showHint("Show <em>both hands</em> — one on each end of the accordion");
     } else if (app.volume < 0.08) {
-      setStatus(`Tracking ✓${cpu}`, "ok");
+      setStatus(`Tracking${cpu}`, "ok");
       showHint("Pump your hands <em>together and apart</em> to squeeze the bellows");
     } else {
-      setStatus(`Playing 🪗${cpu}`, "ok");
+      setStatus(`Playing${cpu}`, "ok");
       showHint("Wider apart = <em>higher</em> notes — keep pumping to keep singing");
     }
   } else if (app.instrument === "maracas") {
@@ -948,45 +948,45 @@ function updateStatusAndHints(tromboneState, accordionState) {
       setStatus(`Searching for you…${cpu}`, "warn");
       showHint("Hold up a <em>hand</em> — or two, one maraca each");
     } else if (app.maracaVolume < 0.12) {
-      setStatus(`Tracking ✓${cpu}`, "ok");
-      showHint("<em>Shake</em> it! Quick back-and-forth shakes rattle the beads 🪇");
+      setStatus(`Tracking${cpu}`, "ok");
+      showHint("<em>Shake</em> it! Quick back-and-forth shakes rattle the beads");
     } else {
-      setStatus(`Shaking 🪇${cpu}`, "ok");
+      setStatus(`Shaking${cpu}`, "ok");
       showHint("Shake <em>harder</em> for louder — both hands for double maracas");
     }
   } else if (app.instrument === "drums") {
     if (app.handCount < 1) {
       setStatus(`Searching for you…${cpu}`, "warn");
-      showHint("Put your <em>hands</em> in frame — the pads are at the bottom 🥁");
+      showHint("Put your <em>hands</em> in frame — the pads are at the bottom");
     } else if (now() - app.lastDrumHit > 1500) {
-      setStatus(`Tracking ✓${cpu}`, "ok");
+      setStatus(`Tracking${cpu}`, "ok");
       showHint("<em>Punch down</em> into a pad to hit it — <em>nod your head</em> for the kick");
     } else {
-      setStatus(`Drumming 🥁${cpu}`, "ok");
+      setStatus(`Drumming${cpu}`, "ok");
       showHint("Faster punches hit <em>harder</em> — nod again for more kick");
     }
   } else if (app.instrument === "harp") {
     if (app.handCount < 1) {
       setStatus(`Searching for you…${cpu}`, "warn");
-      showHint("Raise a <em>hand</em> — the harp hangs below your face 🎶");
+      showHint("Raise a <em>hand</em> — the harp hangs below your face");
     } else if (engine.harp && now() - lastHarpPluckT() > 1500) {
-      setStatus(`Tracking ✓${cpu}`, "ok");
+      setStatus(`Tracking${cpu}`, "ok");
       showHint("Sweep your <em>fingertips across</em> the strings to pluck them");
     } else {
-      setStatus(`Plucking 🎶${cpu}`, "ok");
+      setStatus(`Plucking${cpu}`, "ok");
       showHint("Sweep <em>faster</em> for louder plucks — both hands, all ten fingers");
     }
   } else if (app.instrument === "bass") {
     if (app.handCount < 1) {
       setStatus(`Searching for you…${cpu}`, "warn");
-      showHint("Show your <em>face</em> — the bass hangs across your chest 🎸");
+      showHint("Show your <em>face</em> — the bass hangs across your chest");
     } else if (now() - app.lastBassPluck > 1500) {
-      setStatus(`Tracking ✓${cpu}`, "ok");
+      setStatus(`Tracking${cpu}`, "ok");
       showHint(app.handCount < 2
         ? "Slide along the <em>neck</em> to choose a note — flick <em>down</em> to pluck"
         : "Left hand works the <em>frets</em> — flick your right hand <em>down</em> over the strings");
     } else {
-      setStatus(`Plucking 🎸${cpu}`, "ok");
+      setStatus(`Plucking${cpu}`, "ok");
       showHint("Slide <em>right</em> for higher notes — flick harder for more punch");
     }
   }

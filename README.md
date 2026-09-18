@@ -1,4 +1,4 @@
-# 🎶 Air Harp
+# Air Harp
 
 A harp-only edition of [Imaginary Instruments](https://github.com/jammaloo/ImaginaryInstruments)
 (this branch, `harp-only`, carries just the one instrument; `main` has the
@@ -14,7 +14,7 @@ rendered locally in your browser. No video ever leaves your device.
 - Real Karplus-Strong string synthesis (rendered per pitch and cached),
   so plucks genuinely ring and decay like strings.
 - Mouse mode (`M`): sweep the pointer across the strings.
-- `D` toggles a debug overlay; the 🔊 button mutes.
+- `D` toggles a debug overlay; the Mute button mutes.
 
 The harp plays C-major pentatonic (C4–A5), so sweeping wildly always
 sounds musical.
@@ -26,7 +26,7 @@ sounds musical.
 | `D` | debug overlay (landmarks, string state) |
 | `M` | mouse mode (no camera needed) |
 | Mouse mode | sweep the pointer across the strings to pluck |
-| 🔊 button | mute |
+| Mute button | mute |
 
 ## Try it
 
