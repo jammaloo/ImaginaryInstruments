@@ -249,6 +249,15 @@ button.ghost {
 }
 button.ghost:hover { color: var(--text); border-color: rgba(255,255,255,0.3); }
 
+.notice {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  max-width: 560px;
+  line-height: 1.5;
+}
+
 .fineprint { color: rgba(154, 163, 184, 0.7); font-size: 12px; margin: 4px 0 0; }
 
 .hidden { display: none !important; }
