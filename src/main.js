@@ -651,6 +651,7 @@ function updateHarp(frame, now) {
   }
 
   if (app.instrument === "harp") {
+    const bottomY = topY + height;
     for (const tip of tips) {
       const prev = harpTips.get(tip.key);
       harpTips.set(tip.key, { x: tip.x, y: tip.y });
@@ -660,6 +661,10 @@ function updateHarp(frame, now) {
       for (let s = 0; s < HARP_STRINGS; s++) {
         // crossed the string between frames?
         if ((prev.x - xs[s]) * (tip.x - xs[s]) < 0 && now - harpStrings[s].pluckT > 70) {
+          // ...and was the fingertip actually ON the string at that moment?
+          const frac = (xs[s] - prev.x) / (tip.x - prev.x || 1);
+          const yAtCross = prev.y + (tip.y - prev.y) * frac;
+          if (yAtCross < topY || yAtCross > bottomY) continue;
           const vol = clamp01(speed / PLUCK_FULL_SPEED) ** 0.8;
           harpStrings[s].amp = Math.max(harpStrings[s].amp, vol);
           harpStrings[s].phase = Math.random() * Math.PI * 2;
