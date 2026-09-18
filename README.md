@@ -1,4 +1,4 @@
-# 🎺🪗🪇 Imaginary Instruments
+# 🎺🪗🥁🪇 Imaginary Instruments
 
 Play invisible instruments with your body — right in the browser.
 
@@ -39,11 +39,27 @@ One maraca per hand — or grab just one.
 
 ![Air maracas](docs/screenshot-maracas.png)
 
+### 🥁 Air Drums
+A five-piece kit across the bottom of the frame.
+
+- **Punch down into a pad** to strike it — kick, hi-hat, snare, tom, floor.
+  Punch speed sets the velocity, like real sticking.
+- A sharp **nod of your head** plays the kick drum (face tracking).
+- Mouse mode: sweep the pointer down into a pad; hold click for the kick.
+
+### 🎶 Air Harp
+A harp hangs in the air below your face — both hands stay free.
+
+- **All ten fingertips are plectra**: sweep a fingertip *across* a glowing
+  string to pluck it. Sweep speed sets the volume.
+- Real Karplus-Strong string synthesis (rendered per pitch and cached),
+  so plucks genuinely ring and decay like strings.
+
 ## Controls
 
 | Input | Action |
 | --- | --- |
-| `1` / `2` / `3` | switch instrument (trombone / accordion / maracas) |
+| `1`–`5` | switch instrument (trombone / accordion / maracas / drums / harp) |
 | `D` | debug overlay (landmarks, slide/spread values) |
 | `M` | mouse mode (no camera needed) |
 | Mouse mode | move pointer = hand · hold click / `Space` = blow |

@@ -440,3 +440,137 @@ export function drawMaraca(ctx, { palm, angle, intensity, hitAge, scale, fx = tr
 
   ctx.restore();
 }
+
+/* ------------------------------------------------------------------ */
+/* Drums — five pads along the bottom, flashing when struck            */
+/* ------------------------------------------------------------------ */
+
+export function drawDrums(ctx, { lanes, now, fx = true }) {
+  const w = ctx.canvas.width;
+  const h = ctx.canvas.height;
+  const laneW = w / lanes.length;
+  const padY = h - h * 0.17;
+
+  for (let i = 0; i < lanes.length; i++) {
+    const lane = lanes[i];
+    const cx = (i + 0.5) * laneW;
+    const age = (now - lane.lastHit) / 1000;
+    const flash = age < 0.28 ? 1 - age / 0.28 : 0;
+    const isKick = lane.type === "kick";
+    const r = isKick ? h * 0.105 : h * (lane.type === "floor" ? 0.085 : 0.07);
+
+    ctx.save();
+    setShadow(ctx, fx, "rgba(0,0,0,0.5)", h * 0.02, h * 0.008);
+
+    // shell
+    const g = ctx.createLinearGradient(0, padY - r, 0, padY + r);
+    g.addColorStop(0, lane.color);
+    g.addColorStop(1, "rgba(10, 14, 24, 0.85)");
+    ctx.fillStyle = g;
+    ctx.globalAlpha = 0.88;
+    ctx.beginPath();
+    ctx.ellipse(cx, padY, r, r * (isKick ? 0.9 : 0.55), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // head
+    ctx.fillStyle = flash > 0
+      ? `rgba(255, 255, 240, ${0.35 + 0.65 * flash})`
+      : "rgba(235, 230, 215, 0.85)";
+    ctx.beginPath();
+    ctx.ellipse(cx, padY - r * 0.08, r * 0.82, r * (isKick ? 0.6 : 0.38), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(20, 24, 34, 0.8)";
+    ctx.lineWidth = h * 0.004;
+    ctx.stroke();
+
+    // rim lugs
+    ctx.strokeStyle = "rgba(255, 205, 120, 0.6)";
+    ctx.lineWidth = h * 0.003;
+    for (const k of [-0.6, 0, 0.6]) {
+      const lx = cx + Math.cos(k) * r * 0.92;
+      const ly = padY + Math.sin(k) * r * 0.5 - r * 0.08;
+      ctx.beginPath();
+      ctx.arc(lx, ly, h * 0.004, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    if (isKick) { // resonant port
+      ctx.fillStyle = "rgba(15, 18, 28, 0.8)";
+      ctx.beginPath();
+      ctx.arc(cx, padY - r * 0.05, r * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // hit ring
+    if (flash > 0) {
+      ctx.strokeStyle = `rgba(255, 235, 180, ${0.8 * flash})`;
+      ctx.lineWidth = h * 0.006 * flash + h * 0.002;
+      ctx.beginPath();
+      ctx.ellipse(cx, padY - r * 0.08, r * (0.9 + (1 - flash) * 0.5),
+        r * (isKick ? 0.66 : 0.42) * (1 + (1 - flash) * 0.4), 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // label
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.font = `${Math.max(11, h * 0.022)}px system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.fillText(lane.label.toUpperCase(), cx, padY + r + h * 0.022);
+    ctx.restore();
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Harp — strings hanging below the face, rippling when plucked        */
+/* ------------------------------------------------------------------ */
+
+export function drawHarp(ctx, { cx, topY, width, height, strings, now, fx = true }) {
+  const w = ctx.canvas.width;
+  const bottomY = topY + height;
+  const x0 = cx - width / 2;
+  const x1 = cx + width / 2;
+
+  // frame: top bar + side posts (brass, matching the trombone)
+  ctx.save();
+  setShadow(ctx, fx, "rgba(0,0,0,0.5)", w * 0.008);
+  ctx.strokeStyle = brassGradient(ctx, x0, topY, x0, topY + 10);
+  ctx.lineWidth = Math.max(3, w * 0.006);
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x0 - w * 0.004, topY);
+  ctx.lineTo(x1 + w * 0.004, topY);
+  ctx.moveTo(x0, topY);
+  ctx.lineTo(x0, bottomY);
+  ctx.moveTo(x1, topY);
+  ctx.lineTo(x1, bottomY);
+  ctx.stroke();
+
+  // strings
+  for (let i = 0; i < strings.length; i++) {
+    const s = strings[i];
+    const sx = x0 + ((i + 0.5) / strings.length) * width;
+    const age = (now - s.pluckT) / 1000;
+    const amp = s.amp * Math.exp(-Math.max(age, 0) * 3.2);
+
+    const bright = Math.min(1, amp * 1.4);
+    ctx.strokeStyle = `rgba(${190 + 60 * bright}, ${170 + 70 * bright}, 255, ${0.5 + 0.5 * bright})`;
+    ctx.lineWidth = Math.max(1.2, w * 0.0016) * (1 + bright);
+    if (bright > 0.05 && fx) {
+      ctx.shadowColor = "rgba(200, 170, 255, 0.9)";
+      ctx.shadowBlur = w * 0.006 * bright;
+    }
+    ctx.beginPath();
+    const segs = 10;
+    for (let k = 0; k <= segs; k++) {
+      const y = topY + (k / segs) * height;
+      const wob = amp * width * 0.02 * Math.sin((k / segs) * Math.PI) * Math.sin(age * 60 + s.phase);
+      const x = sx + wob;
+      if (k === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+  ctx.restore();
+}

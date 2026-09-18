@@ -111,6 +111,16 @@ html, body {
   color: #34d399;
   box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.4);
 }
+.switch-btn.active[data-instrument="drums"] {
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.25), rgba(248, 113, 113, 0.08));
+  color: #f87171;
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.4);
+}
+.switch-btn.active[data-instrument="harp"] {
+  background: linear-gradient(135deg, rgba(192, 132, 252, 0.25), rgba(192, 132, 252, 0.08));
+  color: #c084fc;
+  box-shadow: inset 0 0 0 1px rgba(192, 132, 252, 0.4);
+}
 .switch-btn.active kbd { color: inherit; }
 
 .top-right { display: flex; align-items: center; gap: 10px; }
@@ -225,6 +235,8 @@ html, body {
 .card[data-instrument="trombone"]:hover { border-color: rgba(255, 179, 71, 0.5); }
 .card[data-instrument="accordion"]:hover { border-color: rgba(244, 114, 182, 0.5); }
 .card[data-instrument="maracas"]:hover { border-color: rgba(52, 211, 153, 0.5); }
+.card[data-instrument="drums"]:hover { border-color: rgba(248, 113, 113, 0.5); }
+.card[data-instrument="harp"]:hover { border-color: rgba(192, 132, 252, 0.5); }
 .card-art { font-size: 34px; }
 .card h2 { margin: 8px 0 6px; font-size: 17px; }
 .card p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.5; }

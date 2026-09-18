@@ -29,6 +29,15 @@ const ACCORDION_SCALE = (() => {
 
 const semitonesToFreq = (base, semis) => base * 2 ** (-semis / 12);
 
+/** One shared second of white noise, sliced at random offsets per burst. */
+function makeNoiseBuffer(ctx) {
+  const len = Math.floor(ctx.sampleRate);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  return buf;
+}
+
 export class AudioEngine {
   constructor() {
     this.ctx = null;
@@ -60,6 +69,8 @@ export class AudioEngine {
     this.trombone = new TromboneVoice(ctx, master);
     this.accordion = new AccordionVoice(ctx, master);
     this.maraca = new MaracaVoice(ctx, master);
+    this.drums = new DrumKitVoice(ctx, master);
+    this.harp = new HarpVoice(ctx, master);
   }
 
   setMuted(muted) {
@@ -81,6 +92,14 @@ export class AudioEngine {
       Math.max(0, Math.round(spread01 * (ACCORDION_SCALE.length - 1)))
     );
     return ACCORDION_SCALE[i];
+  }
+
+  /** Harp string index -> frequency: C-major pentatonic, C4 up two octaves. */
+  static harpFreq(index) {
+    const semis = [0, 2, 4, 7, 9];
+    const octave = Math.floor(index / 5);
+    const midi = 60 + octave * 12 + semis[index % 5]; // 60 = C4
+    return 440 * 2 ** ((midi - 69) / 12);
   }
 }
 
@@ -240,10 +259,7 @@ class MaracaVoice {
     this.hitCount = 0; // observability for tests/debug
 
     // one shared second of white noise, sliced at random offsets per burst
-    const len = Math.floor(ctx.sampleRate);
-    this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
-    const data = this.noise.getChannelData(0);
-    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    this.noise = makeNoiseBuffer(ctx);
   }
 
   hit(vol) {
@@ -284,5 +300,146 @@ class MaracaVoice {
   }
 
   /** One-shots decay on their own; nothing to silence. */
+  silence() {}
+}
+
+/**
+ * Drum kit: velocity one-shots. kick = sine drop + click, snare = noise
+ * + tonal crack, hat = short high sizzle, toms = pitched sine drops.
+ */
+class DrumKitVoice {
+  constructor(ctx, dest) {
+    this.ctx = ctx;
+    this.dest = dest;
+    this.noise = makeNoiseBuffer(ctx);
+    this.hitCount = 0;
+    this.byType = { kick: 0, hat: 0, snare: 0, tom: 0, floor: 0 };
+  }
+
+  hit(type, vol = 1) {
+    const t = this.ctx.currentTime;
+    this.hitCount++;
+    this.byType[type] = (this.byType[type] ?? 0) + 1;
+    if (type === "kick") this.kick(t, vol);
+    else if (type === "snare") this.snare(t, vol);
+    else if (type === "hat") this.hat(t, vol);
+    else this.tom(t, vol, type === "floor" ? 0.65 : 1);
+  }
+
+  kick(t, vol) {
+    const osc = this.ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(155, t);
+    osc.frequency.exponentialRampToValueAtTime(44, t + 0.11);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(1.25 * vol, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    osc.connect(g).connect(this.dest);
+    osc.start(t);
+    osc.stop(t + 0.25);
+    this.burst({ t, vol: vol * 0.35, decay: 0.02, filter: "lowpass", freq: 3200, Q: 0.7 }); // beater click
+  }
+
+  snare(t, vol) {
+    this.burst({ t, vol: vol * 0.9, decay: 0.16, filter: "bandpass", freq: 2100, Q: 0.8 });
+    this.burst({ t, vol: vol * 0.5, decay: 0.08, filter: "highpass", freq: 5200, Q: 0.7 });
+    const osc = this.ctx.createOscillator(); // tonal crack under the noise
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(196, t);
+    osc.frequency.exponentialRampToValueAtTime(148, t + 0.08);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.5 * vol, t + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.11);
+    osc.connect(g).connect(this.dest);
+    osc.start(t);
+    osc.stop(t + 0.13);
+  }
+
+  hat(t, vol) {
+    this.burst({ t, vol: vol * 0.65, decay: 0.045, filter: "highpass", freq: 7800, Q: 0.9 });
+  }
+
+  tom(t, vol, pitch = 1) {
+    const osc = this.ctx.createOscillator();
+    osc.type = "sine";
+    const base = 210 * pitch;
+    osc.frequency.setValueAtTime(base, t);
+    osc.frequency.exponentialRampToValueAtTime(base * 0.5, t + 0.18);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.95 * vol, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    osc.connect(g).connect(this.dest);
+    osc.start(t);
+    osc.stop(t + 0.3);
+    this.burst({ t, vol: vol * 0.18, decay: 0.02, filter: "bandpass", freq: base * 4, Q: 1 }); // stick
+  }
+
+  burst({ t, vol, decay, filter, freq, Q }) {
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noise;
+    const f = this.ctx.createBiquadFilter();
+    f.type = filter;
+    f.frequency.value = freq;
+    f.Q.value = Q;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.001, t + decay);
+    src.connect(f).connect(g).connect(this.dest);
+    src.start(t, Math.random() * 0.8);
+    src.stop(t + decay + 0.05);
+  }
+
+  silence() {}
+}
+
+/**
+ * Harp: real Karplus-Strong plucked strings, rendered offline into cached
+ * buffers (one per pitch) and played back as one-shots.
+ */
+class HarpVoice {
+  constructor(ctx, dest) {
+    this.ctx = ctx;
+    this.dest = dest;
+    this.cache = new Map(); // freq -> AudioBuffer
+    this.pluckCount = 0;
+  }
+
+  ksBuffer(freq) {
+    let buf = this.cache.get(freq);
+    if (buf) return buf;
+    const sr = this.ctx.sampleRate;
+    const N = Math.max(2, Math.round(sr / freq)); // delay line = one period
+    buf = this.ctx.createBuffer(1, Math.floor(sr * 2.2), sr);
+    const out = buf.getChannelData(0);
+    const line = new Float32Array(N);
+    for (let i = 0; i < N; i++) line[i] = Math.random() * 2 - 1;
+    // slight damping tweak so bass notes don't ring forever
+    const decay = freq < 330 ? 0.9955 : 0.9965;
+    let j = 0;
+    for (let i = 0; i < out.length; i++) {
+      const cur = line[j];
+      out[i] = cur;
+      line[j] = (cur + line[(j + 1) % N]) * 0.5 * decay;
+      j = (j + 1) % N;
+    }
+    this.cache.set(freq, buf);
+    return buf;
+  }
+
+  pluck(freq, vol = 1) {
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.ksBuffer(freq);
+    src.playbackRate.value = 0.995 + Math.random() * 0.01; // natural variance
+    const g = this.ctx.createGain();
+    g.gain.value = 0.85 * vol;
+    src.connect(g).connect(this.dest);
+    src.start();
+    this.pluckCount++;
+  }
+
   silence() {}
 }

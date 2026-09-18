@@ -16,7 +16,7 @@
 
 import { AudioEngine } from "./audio.js";
 import { Tracker } from "./tracking.js";
-import { drawTrombone, drawAccordion, drawMaraca, drawHandSkeleton } from "./draw.js";
+import { drawTrombone, drawAccordion, drawMaraca, drawDrums, drawHarp, drawHandSkeleton } from "./draw.js";
 
 /* ---------------- tuning ---------------- */
 const TROMBONE_EXTENT = { min: 1.0, max: 4.2 };  // mouth↔hand distance in eye-widths -> slide 0..1
@@ -26,6 +26,18 @@ const BLOW_ON = 0.16, BLOW_OFF = 0.09;           // jawOpen hysteresis
 const MARACA_SHAKE_SPEED = 6;                    // eye-widths/sec before a reversal counts as a shake
 const MARACA_FULL_SPEED = 26;                    // eye-widths/sec for full-volume rattle
 const MARACA_COOLDOWN_MS = 70;                   // min gap between hits, per hand
+const DRUM_ZONE_Y = 0.58;                        // pads live in the bottom fraction of the frame
+const DRUM_HIT_SPEED = 3.5;                      // downward eye-widths/sec to strike
+const DRUM_FULL_SPEED = 16;
+const DRUM_REARM_SPEED = 1.2;                    // must slow below this before the next strike
+const NOD_SPEED = 1.7;                           // face downward speed (eye-widths/s) = kick
+const NOD_COOLDOWN_MS = 240;
+const HARP_STRINGS = 10;
+const HARP_WIDTH_EYE = 4.8;                      // harp span in eye-widths
+const HARP_HEIGHT_EYE = 5.4;                     // string length in eye-widths
+const PLUCK_SPEED = 1.5;                         // fingertip speed (eye-widths/s) to pluck
+const PLUCK_FULL_SPEED = 9;
+const TIP_IDS = [4, 8, 12, 16, 20];              // MediaPipe fingertip landmarks
 const MOUSE_MOUTH = { x: 0.5, y: 0.28 };
 const MOUSE_EYE_DIST = 0.075;                    // virtual eye width (fraction of canvas width)
 
@@ -90,6 +102,7 @@ const app = {
   spreadRaw: 0,
   volume: 0,
   maracaVolume: 0,
+  lastDrumHit: -1e9,
   freq: 0,
   faceSeen: false,
   handCount: 0,
@@ -130,6 +143,21 @@ const sm = {
 const maracaSlots = [0, 1].map(() => ({
   pos: null, vx: 0, vy: 0, lastT: null, lastHit: -1e9, intensity: 0, angle: 0,
 }));
+
+// drum strike trackers: one per hand (down-punch arming) + face (nod)
+const DRUM_TYPES = ["kick", "hat", "snare", "tom", "floor"];
+const DRUM_COLORS = ["#e05d5d", "#e0b95d", "#5dc0e0", "#8d5de0", "#5de08d"];
+const DRUM_LABELS = ["kick", "hi-hat", "snare", "tom", "floor"];
+const drumSlots = [0, 1].map(() => ({ pos: null, lastT: null, armed: true }));
+const drumFace = { y: null, lastT: null };
+const drumFlashes = { lanes: DRUM_TYPES.map(() => -1e9), kick: -1e9, kickByHand: -1e9 };
+
+// harp: fingertip pluck trackers + string ripple state
+const harpTips = new Map(); // "hand:tip" -> { x, y }
+const harpStrings = Array.from({ length: HARP_STRINGS }, () => ({
+  amp: 0, phase: 0, pluckT: -1e9,
+}));
+let harpLastT = null;
 
 /* ---------------- debug hooks (also handy for automated testing) ---------------- */
 window.__II_DEBUG = {
@@ -251,6 +279,10 @@ function setInstrument(name) {
     slot.intensity = 0;
   }
   app.maracaVolume = 0;
+  for (const slot of drumSlots) { slot.pos = null; slot.lastT = null; slot.armed = true; }
+  drumFace.y = null; drumFace.lastT = null;
+  harpTips.clear();
+  for (const s of harpStrings) { s.amp = 0; s.pluckT = -1e9; }
 }
 
 $("startBtn").addEventListener("click", startCamera);
@@ -283,6 +315,8 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "1") setInstrument("trombone");
   else if (e.key === "2") setInstrument("accordion");
   else if (e.key === "3") setInstrument("maracas");
+  else if (e.key === "4") setInstrument("drums");
+  else if (e.key === "5") setInstrument("harp");
   else if (e.key.toLowerCase() === "d") app.debug = !app.debug;
   else if (e.key.toLowerCase() === "m" && app.mode !== "mouse") startMouseMode();
   else if (e.code === "Space" && app.mode === "mouse") {
@@ -506,9 +540,145 @@ function updateMaracas(frame, now) {
   return { visible: out.length > 0, hands: out };
 }
 
+/**
+ * Drums: five pads across the bottom. A strike is a fast DOWNWARD punch
+ * while the palm is inside a pad's lane (per-hand re-arm so one punch is
+ * one hit); a quick downward nod of the face also plays the kick.
+ */
+function updateDrums(frame, now) {
+  const active = app.instrument === "drums";
+  const eyePx = frame.face?.eyePx || canvas.width * 0.075;
+  const zoneY = canvas.height * DRUM_ZONE_Y;
+  const sorted = frame.hands.length >= 2
+    ? [...frame.hands].sort((a, b) => a.palm.x - b.palm.x)
+    : frame.hands;
+
+  for (let i = 0; i < 2; i++) {
+    const slot = drumSlots[i];
+    const hand = sorted[i];
+    if (!hand) { slot.pos = null; slot.lastT = null; slot.armed = true; continue; }
+
+    if (!slot.pos || !slot.lastT) {
+      slot.pos = { x: hand.palm.x, y: hand.palm.y };
+      slot.lastT = now;
+      continue;
+    }
+    const dt = Math.min(Math.max((now - slot.lastT) / 1000, 1 / 240), 0.1);
+    const vy = (hand.palm.y - slot.pos.y) / dt / eyePx; // + = moving down
+    slot.pos = { x: hand.palm.x, y: hand.palm.y };
+    slot.lastT = now;
+
+    if (slot.armed && vy > DRUM_HIT_SPEED && hand.palm.y > zoneY) {
+      slot.armed = false;
+      const lane = Math.min(DRUM_TYPES.length - 1, Math.max(0,
+        Math.floor((hand.palm.x / canvas.width) * DRUM_TYPES.length)));
+      const vol = Math.max(0.3, clamp01(vy / DRUM_FULL_SPEED) ** 0.85);
+      if (active) {
+        drumFlashes.lanes[lane] = now;
+        if (lane === 0) drumFlashes.kick = now;
+        app.lastDrumHit = now;
+        engine.drums?.hit(DRUM_TYPES[lane], vol);
+      }
+    } else if (vy < DRUM_REARM_SPEED) {
+      slot.armed = true; // pulled back up / settled — ready for the next hit
+    }
+  }
+
+  // head nod -> kick (downward face motion spike, normalized by eye width)
+  if (frame.face) {
+    if (drumFace.y !== null && drumFace.lastT !== null) {
+      const dt = Math.min(Math.max((now - drumFace.lastT) / 1000, 1 / 240), 0.1);
+      const vy = (frame.face.mouth.y - drumFace.y) / dt / eyePx;
+      if (active && vy > NOD_SPEED && now - drumFlashes.kick > NOD_COOLDOWN_MS) {
+        drumFlashes.kick = now;
+        drumFlashes.lanes[0] = now;
+        app.lastDrumHit = now;
+        engine.drums?.hit("kick", Math.min(1, vy / (NOD_SPEED * 3)));
+      }
+    }
+    drumFace.y = frame.face.mouth.y;
+    drumFace.lastT = now;
+  } else {
+    drumFace.y = null;
+    drumFace.lastT = null;
+  }
+
+  // mouse mode: hold click / Space for the kick
+  if (active && app.mode === "mouse" && (pointer.down || pointer.space) &&
+      now - drumFlashes.kick > 220) {
+    drumFlashes.kick = now;
+    drumFlashes.lanes[0] = now;
+    app.lastDrumHit = now;
+    engine.drums?.hit("kick", 0.9);
+  }
+
+  return { visible: true };
+}
+
+/**
+ * Harp: hangs below the face (hands stay free). Every fingertip is a
+ * plectrum — a fingertip crossing a string's x with enough horizontal
+ * speed plucks it. Velocity uses raw landmark positions.
+ */
+function updateHarp(frame, now) {
+  const eyePx = frame.face?.eyePx || canvas.width * 0.075;
+  const mouth = frame.face?.mouth || { x: canvas.width / 2, y: canvas.height * 0.3 };
+  const dt = harpLastT === null ? 1 / 60 : Math.min(Math.max((now - harpLastT) / 1000, 1 / 240), 0.1);
+  harpLastT = now;
+
+  const cx = mouth.x;
+  const topY = mouth.y + eyePx * 1.1;
+  const width = eyePx * HARP_WIDTH_EYE;
+  const height = eyePx * HARP_HEIGHT_EYE;
+  const xs = Array.from({ length: HARP_STRINGS }, (_, i) =>
+    cx - width / 2 + ((i + 0.5) / HARP_STRINGS) * width);
+
+  // decay existing ripples
+  for (const s of harpStrings) s.amp *= Math.exp(-dt * 2.2);
+
+  // collect plectra: fingertips from camera hands, the palm in mouse mode
+  const tips = [];
+  for (let i = 0; i < frame.hands.length && i < 2; i++) {
+    const h = frame.hands[i];
+    if (h.points) {
+      for (let j = 0; j < TIP_IDS.length; j++) {
+        const p = h.points[TIP_IDS[j]];
+        tips.push({ key: `${i}:${j}`, x: (1 - p.x) * canvas.width, y: p.y * canvas.height });
+      }
+    } else {
+      tips.push({ key: `${i}:palm`, x: h.palm.x, y: h.palm.y });
+    }
+  }
+
+  if (app.instrument === "harp") {
+    for (const tip of tips) {
+      const prev = harpTips.get(tip.key);
+      harpTips.set(tip.key, { x: tip.x, y: tip.y });
+      if (!prev) continue;
+      const speed = Math.abs(tip.x - prev.x) / dt / eyePx;
+      if (speed < PLUCK_SPEED) continue;
+      for (let s = 0; s < HARP_STRINGS; s++) {
+        // crossed the string between frames?
+        if ((prev.x - xs[s]) * (tip.x - xs[s]) < 0 && now - harpStrings[s].pluckT > 70) {
+          const vol = clamp01(speed / PLUCK_FULL_SPEED) ** 0.8;
+          harpStrings[s].amp = Math.max(harpStrings[s].amp, vol);
+          harpStrings[s].phase = Math.random() * Math.PI * 2;
+          harpStrings[s].pluckT = now;
+          engine.harp?.pluck(AudioEngine.harpFreq(s), vol);
+        }
+      }
+    }
+  } else {
+    // keep tips fresh so re-entering the instrument doesn't ghost-cross
+    for (const tip of tips) harpTips.set(tip.key, { x: tip.x, y: tip.y });
+  }
+
+  return { visible: true, cx, topY, width, height, xs };
+}
+
 /* ---------------- render ---------------- */
 
-function render(frame, tromboneState, accordionState, maracaState, now) {
+function render(frame, tromboneState, accordionState, maracaState, drumState, harpState, now) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const t = now / 1000;
 
@@ -560,6 +730,29 @@ function render(frame, tromboneState, accordionState, maracaState, now) {
       });
     }
   }
+  if (app.instrument === "drums") {
+    drawDrums(ctx, {
+      lanes: DRUM_TYPES.map((type, i) => ({
+        type,
+        label: DRUM_LABELS[i],
+        color: DRUM_COLORS[i],
+        lastHit: drumFlashes.lanes[i],
+      })),
+      now,
+      fx,
+    });
+  }
+  if (app.instrument === "harp") {
+    drawHarp(ctx, {
+      cx: harpState.cx,
+      topY: harpState.topY,
+      width: harpState.width,
+      height: harpState.height,
+      strings: harpStrings,
+      now,
+      fx,
+    });
+  }
 
   if (app.debug) {
     if (app.mode === "camera") {
@@ -575,7 +768,7 @@ function render(frame, tromboneState, accordionState, maracaState, now) {
     ctx.font = `${Math.max(13, canvas.width * 0.014)}px ui-monospace, monospace`;
     const lines = [
       `mode=${app.mode} fps=${app.fps.toFixed(0)} quality=${app.quality}${app.cpuFallback ? " (cpu)" : ""} hands=${app.handCount} face=${app.faceSeen}`,
-      `slide=${app.slide01.toFixed(2)} spread=${app.spread01.toFixed(2)} shake=${app.maracaVolume.toFixed(2)} raw=${(app.spreadRaw || 0).toFixed(2)}`,
+      `slide=${app.slide01.toFixed(2)} spread=${app.spread01.toFixed(2)} shake=${app.maracaVolume.toFixed(2)} drums=${engine.drums?.hitCount ?? 0} plucks=${engine.harp?.pluckCount ?? 0}`,
       `open=${(frame.face?.openness ?? 0).toFixed(2)} blowing=${app.blowing} vol=${app.volume.toFixed(2)} freq=${app.freq.toFixed(1)}Hz`,
     ];
     lines.forEach((l, i) => ctx.fillText(l, 14, canvas.height * 0.06 + i * canvas.width * 0.018));
@@ -602,11 +795,13 @@ function updateStatusAndHints(tromboneState, accordionState) {
   const cpu = app.cpuFallback ? " · CPU" : "";
   if (app.mode === "mouse") {
     setStatus("Mouse mode", "ok");
-    showHint(app.instrument === "trombone"
-      ? "Move the pointer to work the slide — <em>hold click or Space to blow</em>"
-      : app.instrument === "accordion"
-        ? "Move the pointer: distance from center is the bellows — <em>pump it to play</em>"
-        : "<em>Shake</em> the pointer back and forth to rattle the maraca 🪇");
+    showHint({
+      trombone: "Move the pointer to work the slide — <em>hold click or Space to blow</em>",
+      accordion: "Move the pointer: distance from center is the bellows — <em>pump it to play</em>",
+      maracas: "<em>Shake</em> the pointer back and forth to rattle the maraca 🪇",
+      drums: "Sweep the pointer <em>down</em> into a pad to hit it — <em>hold click for the kick</em> 🥁",
+      harp: "Sweep the pointer <em>across</em> the strings to pluck them 🎶",
+    }[app.instrument]);
     return;
   }
 
@@ -650,7 +845,34 @@ function updateStatusAndHints(tromboneState, accordionState) {
       setStatus(`Shaking 🪇${cpu}`, "ok");
       showHint("Shake <em>harder</em> for louder — both hands for double maracas");
     }
+  } else if (app.instrument === "drums") {
+    if (app.handCount < 1) {
+      setStatus(`Searching for you…${cpu}`, "warn");
+      showHint("Put your <em>hands</em> in frame — the pads are at the bottom 🥁");
+    } else if (now() - app.lastDrumHit > 1500) {
+      setStatus(`Tracking ✓${cpu}`, "ok");
+      showHint("<em>Punch down</em> into a pad to hit it — <em>nod your head</em> for the kick");
+    } else {
+      setStatus(`Drumming 🥁${cpu}`, "ok");
+      showHint("Faster punches hit <em>harder</em> — nod again for more kick");
+    }
+  } else if (app.instrument === "harp") {
+    if (app.handCount < 1) {
+      setStatus(`Searching for you…${cpu}`, "warn");
+      showHint("Raise a <em>hand</em> — the harp hangs below your face 🎶");
+    } else if (engine.harp && now() - lastHarpPluckT() > 1500) {
+      setStatus(`Tracking ✓${cpu}`, "ok");
+      showHint("Sweep your <em>fingertips across</em> the strings to pluck them");
+    } else {
+      setStatus(`Plucking 🎶${cpu}`, "ok");
+      showHint("Sweep <em>faster</em> for louder plucks — both hands, all ten fingers");
+    }
   }
+}
+
+function now() { return performance.now(); }
+function lastHarpPluckT() {
+  return harpStrings.reduce((m, s) => Math.max(m, s.pluckT), -1e9);
 }
 
 /* ---------------- main loop ---------------- */
@@ -668,7 +890,9 @@ function frame(now) {
   const tromboneState = updateTrombone(lastFrameState);
   const accordionState = updateAccordion(lastFrameState, now);
   const maracaState = updateMaracas(lastFrameState, now);
-  render(lastFrameState, tromboneState, accordionState, maracaState, now);
+  const drumState = updateDrums(lastFrameState, now);
+  const harpState = updateHarp(lastFrameState, now);
+  render(lastFrameState, tromboneState, accordionState, maracaState, drumState, harpState, now);
 
   if (now - (frame._lastUI ?? 0) > 300) { // don't thrash the DOM every frame
     frame._lastUI = now;
