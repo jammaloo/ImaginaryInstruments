@@ -627,7 +627,7 @@ function updateHarp(frame, now) {
   harpLastT = now;
 
   const cx = mouth.x;
-  const topY = mouth.y + eyePx * 1.1;
+  const topY = mouth.y + eyePx * 0.45; // right at the chin
   const width = eyePx * HARP_WIDTH_EYE;
   const height = eyePx * HARP_HEIGHT_EYE;
   const xs = Array.from({ length: HARP_STRINGS }, (_, i) =>
